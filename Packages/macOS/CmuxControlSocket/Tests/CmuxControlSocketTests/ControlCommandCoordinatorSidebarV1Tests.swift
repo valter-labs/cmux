@@ -46,6 +46,24 @@ struct ControlCommandCoordinatorSidebarV1Tests {
             == (command == "list_status" ? "No status entries" : "No metadata entries"))
     }
 
+    @Test(arguments: ["set_status", "report_meta", "clear_status", "clear_meta"])
+    func invalidStatusConditionsRejectBeforeEnqueue(command: String) {
+        for option in ["--if-absent=false", "--if-absent", "--if-absent=maybe",
+                       "--if-default-value", "--if-absent=true --if-default-value=old",
+                       "--if-default-value=old --if-default-value=new",
+                       "--if-absent=true --if-absent=true"] {
+            let context = FakeSidebarV1ControlCommandContext()
+            let coordinator = ControlCommandCoordinator(context: context)
+            let value = command.hasPrefix("clear") ? "" : " new"
+            let response = coordinator.handleSidebarV1(
+                command: command, args: "history\(value) --tab=\(UUID().uuidString) \(option)"
+            )
+            #expect(response?.hasPrefix("ERROR:") == true, "Rejected condition: \(command) \(option)")
+            #expect(context.statusUpsertCall == nil)
+            #expect(context.statusClearCall == nil)
+        }
+    }
+
     @Test func statusPersistenceIsExplicitAndValidatedBeforeMutation() {
         for (option, expected) in [("", false), (" --persist true", true), (" --persist=false", false)] {
             let context = FakeSidebarV1ControlCommandContext()

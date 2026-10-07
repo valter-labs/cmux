@@ -571,6 +571,55 @@ extension AgentNotificationRegressionTests {
         )
     }
 
+    @Test("Conditional status commands preserve changes made before mutation drain",
+          arguments: ["set_status", "clear_status", "report_meta", "clear_meta"])
+    func conditionalStatusGuardsLiveValueAndPresentation(command: String) throws {
+        let fixture = try makeFixture()
+        defer { fixture.restore() }
+        let bus = TerminalMutationBus.shared
+        bus.discardAllMutationsForTesting()
+        bus.setDrainsSuspendedForTesting(true)
+        defer {
+            bus.discardAllMutationsForTesting()
+            bus.setDrainsSuspendedForTesting(false)
+        }
+        let coordinator = ControlCommandCoordinator(context: TerminalController.shared)
+        let key = "conditional.history"
+        let isClear = command.hasPrefix("clear")
+        for change in ["value", "icon", "color", "url", "priority", "format", "work", "absent"] {
+            fixture.source.setStatusEntry(SidebarStatusEntry(
+                key: key, value: "observed", icon: nil, color: nil, url: nil,
+                priority: 0, format: .plain, timestamp: Date()
+            ), key: key, panelId: nil)
+            fixture.source.recordAgentPID(key: key, pid: 42_001, panelId: nil)
+            let args = "\(key)\(isClear ? "" : " replacement --pid=42002") --tab=\(fixture.source.id) --if-default-value=observed"
+            #expect(coordinator.handleSidebarV1(command: command, args: args) == "OK")
+            if change == "absent" {
+                fixture.source.clearStatusEntry(key: key, panelId: nil)
+            } else {
+                fixture.source.setStatusEntry(SidebarStatusEntry(
+                    key: key, value: change == "value" ? "human" : "observed",
+                    icon: change == "icon" ? "star" : nil,
+                    color: change == "color" ? "#123456" : nil,
+                    url: change == "url" ? URL(string: "https://example.com") : nil,
+                    priority: change == "priority" ? 1 : 0,
+                    format: change == "format" ? .markdown : .plain,
+                    timestamp: Date(), workState: change == "work" ? .waiting : nil
+                ), key: key, panelId: nil)
+            }
+            let expected = fixture.source.statusEntries[key]
+            bus.drainForTesting()
+            #expect(fixture.source.statusEntries[key]?.value == expected?.value)
+            #expect(fixture.source.statusEntries[key]?.icon == expected?.icon)
+            #expect(fixture.source.statusEntries[key]?.color == expected?.color)
+            #expect(fixture.source.statusEntries[key]?.url == expected?.url)
+            #expect(fixture.source.statusEntries[key]?.priority == expected?.priority)
+            #expect(fixture.source.statusEntries[key]?.format == expected?.format)
+            #expect(fixture.source.statusEntries[key]?.workState == expected?.workState)
+            #expect(fixture.source.agentPIDs[key] == 42_001)
+        }
+    }
+
     @Test("Agent runtime mutations follow a pane that moves before queue drain")
     func queuedAgentRuntimeMutationsResolveLivePanelOwner() throws {
         let fixture = try makeFixture()
