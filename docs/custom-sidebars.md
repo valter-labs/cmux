@@ -347,9 +347,18 @@ with:
   when the underlying activity happened.
 
   `cmux set-status <key> <value> --persist true` explicitly keeps that entry
-  across workspace restoration. The default is `false`: existing runtime status
-  reporters remain transient because their processes may no longer exist.
-  Restoring a persistent entry never restores agent PIDs or execution state.
+  across workspace restoration, including its key, value, icon, color, URL,
+  priority, format, help text and original publication timestamp. The default is
+  `false`: existing runtime status reporters remain transient because their
+  processes may no longer exist. Restored URLs must use HTTP or HTTPS; other
+  schemes are discarded. An unknown saved format falls back to plain text.
+
+  URL, priority, format and help text are optional snapshot fields. Older
+  snapshots default to no URL or help text, priority `0` and plain-text format.
+  Restored priority remains bounded to `-9999...9999`. `workState` and agent
+  PIDs are live evidence: they are never serialized or restored by persistence.
+  The custom-sidebar context still projects only key/value text, not the entry's
+  presentation metadata or publication timestamp.
   Tools can check `cmux capabilities` for
   `custom_sidebar.workspace_status_entries` and
   `custom_sidebar.persistent_status_entries` before publishing durable data.

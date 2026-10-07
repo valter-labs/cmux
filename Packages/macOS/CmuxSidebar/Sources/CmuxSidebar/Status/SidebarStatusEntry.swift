@@ -26,10 +26,12 @@ public struct SidebarStatusEntry: Equatable, Sendable {
     /// entry that is not an agent row, and on agent rows from a reporter that
     /// does not report it.
     public let workState: SidebarAgentWorkState?
-    /// Whether this text entry is explicitly restored with its workspace session.
+    /// Whether this entry's presentation is restored with its workspace session.
     ///
-    /// Defaults to `false` because runtime agent status may be stale after restart.
-    /// Persistence never restores agent PIDs or execution state.
+    /// Retains key/value, icon, color, HTTP(S) URL, priority, format, help text and
+    /// publication timestamp. Defaults to `false` because runtime agent status may
+    /// be stale after restart. Persistence never restores `workState`, agent PIDs
+    /// or execution state.
     public let persist: Bool
 
     /// Creates a status row (defaults mirror the legacy initializer).
