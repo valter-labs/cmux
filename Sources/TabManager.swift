@@ -6586,6 +6586,15 @@ extension TabManager {
             hasher.combine(workspace.isMuted)
             hasher.combine(workspace.panels.count)
             hasher.combine(workspace.statusEntries.count)
+            // Updating durable text keeps the entry count unchanged but must
+            // still trigger a session write; transient process status stays cheap.
+            for entry in workspace.statusEntries.values.filter({ $0.persist }).sorted(by: { $0.key < $1.key }) {
+                hasher.combine(entry.key)
+                hasher.combine(entry.value)
+                hasher.combine(entry.icon)
+                hasher.combine(entry.color)
+                hasher.combine(entry.timestamp.timeIntervalSince1970)
+            }
             hasher.combine(workspace.metadataBlocks.count)
             hasher.combine(workspace.logEntries.count)
             hasher.combine(workspace.panelDirectories.count)
