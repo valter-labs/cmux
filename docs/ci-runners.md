@@ -855,6 +855,25 @@ and the retired self-hosted fleet failed `codesign` with
 | `build-ghosttykit`, `cmux-tui-build-package` (artifacts, nightly, release), `relay-publish-npm` | Blacksmith | publish with R2 or release secrets |
 | `ios-streamed-validate`, `iroh-release-gate` simulator E2E | Blacksmith | secrets in the job, fixed ports, GUI session changes |
 
+## Unsigned nightly build-only validation
+
+For a manual [nightly workflow](../.github/workflows/nightly.yml) dispatch, set
+`build_only=true` to compile an unsigned Release artifact without the helper,
+signing, notarization, dSYM uploads or publication. `build_only_archs` defaults to
+`universal`; choose `arm64` when validating only Apple Silicon. This input is
+honored only in build-only mode, which keeps `fast` false. Publishing runs retain
+their existing architecture selection.
+
+The app-build job allows 150 minutes only for build-only dispatches in
+`valter-labs/cmux`. Upstream, other repositories and publishing builds retain the
+90-minute budget.
+
+Record the source, run and chosen architecture with the artifact. An arm64 pass
+does not establish universal coverage. Use the CLI from that same artifact for
+runtime checks; signing, installation and execution are separate evidence. Follow
+the [tagged-build rules](../skills/cmux-dev-workflow/references/tagged-builds.md)
+before launch, and never replace or stop the user's running stable cmux.
+
 ## Retired: Tart VM fleet
 
 The `tart-*` runner choices (`tart-canary`, `tart-dual` and `tart-small` in
