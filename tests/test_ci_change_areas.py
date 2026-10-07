@@ -214,6 +214,18 @@ def test_cli_sources_route_the_cli_lane_without_app_host_compile() -> None:
     assert actual.release_build is False
 
 
+def test_custom_sidebar_focus_projection_routes_its_runtime_regression() -> None:
+    for path in (
+        "Sources/Workspace+CustomSidebarSnapshot.swift",
+        "tests/test_custom_sidebar_agent_focus.py",
+    ):
+        actual = module.classify_files([path])
+        assert actual.cli is True, path
+        assert actual.macos is True, path
+        assert actual.web is False, path
+        assert actual.swift_packages is False, path
+
+
 def test_cli_workflow_inputs_route_the_required_cli_lane() -> None:
     for path in (
         "tests/test_cli_broken_pipe_writes.py",
