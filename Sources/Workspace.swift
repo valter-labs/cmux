@@ -147,7 +147,11 @@ extension Workspace {
                     icon: entry.icon,
                     color: entry.color,
                     timestamp: entry.timestamp.timeIntervalSince1970,
-                    persist: entry.persist ? true : nil
+                    persist: entry.persist ? true : nil,
+                    url: entry.persist ? entry.url?.absoluteString : nil,
+                    priority: entry.persist ? entry.priority : nil,
+                    format: entry.persist ? entry.format.rawValue : nil,
+                    helpText: entry.persist ? entry.helpText : nil
                 )
             }
         let logEntriesForSnapshot = isDefaultFreestyleSSHDRemoteWorkspace
@@ -364,16 +368,25 @@ extension Workspace {
         groupId = snapshot.groupId
         restoreTodoState(from: snapshot)
 
-        // Restore only explicitly durable text; runtime status and agent identity
+        // Restore only explicitly durable metadata; runtime status and agent identity
         // may describe processes that no longer exist after restart.
         statusEntries.removeAll()
         for entry in snapshot.statusEntries where entry.persist == true {
+            // Session files are external input; keep the control socket's URL boundary.
+            let url = entry.url.flatMap(URL.init(string:)).flatMap { candidate -> URL? in
+                let scheme = candidate.scheme?.lowercased()
+                return scheme == "http" || scheme == "https" ? candidate : nil
+            }
             statusEntries[entry.key] = SidebarStatusEntry(
                 key: entry.key,
                 value: entry.value,
                 icon: entry.icon,
                 color: entry.color,
+                url: url,
+                priority: max(-9999, min(9999, entry.priority ?? 0)),
+                format: entry.format.flatMap(SidebarMetadataFormat.init(rawValue:)) ?? .plain,
                 timestamp: Date(timeIntervalSince1970: entry.timestamp),
+                helpText: entry.helpText,
                 persist: true
             )
         }
