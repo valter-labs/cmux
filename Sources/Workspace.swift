@@ -146,7 +146,8 @@ extension Workspace {
                     value: entry.value,
                     icon: entry.icon,
                     color: entry.color,
-                    timestamp: entry.timestamp.timeIntervalSince1970
+                    timestamp: entry.timestamp.timeIntervalSince1970,
+                    persist: entry.persist ? true : nil
                 )
             }
         let logEntriesForSnapshot = isDefaultFreestyleSSHDRemoteWorkspace
@@ -363,10 +364,19 @@ extension Workspace {
         groupId = snapshot.groupId
         restoreTodoState(from: snapshot)
 
-        // Status entries and agent PIDs are ephemeral runtime state tied to running
-        // processes (e.g. claude_code "Running"). Don't restore them across app
-        // restarts because the processes that set them are gone.
+        // Restore only explicitly durable text; runtime status and agent identity
+        // may describe processes that no longer exist after restart.
         statusEntries.removeAll()
+        for entry in snapshot.statusEntries where entry.persist == true {
+            statusEntries[entry.key] = SidebarStatusEntry(
+                key: entry.key,
+                value: entry.value,
+                icon: entry.icon,
+                color: entry.color,
+                timestamp: Date(timeIntervalSince1970: entry.timestamp),
+                persist: true
+            )
+        }
         agentStatusEntriesByPanelId.removeAll()
         clearAllAgentPIDs(refreshPorts: false)
         clearAllAgentLifecycleStates()

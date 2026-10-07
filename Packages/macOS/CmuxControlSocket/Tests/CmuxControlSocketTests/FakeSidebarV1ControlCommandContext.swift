@@ -33,7 +33,8 @@ final class FakeSidebarV1ControlCommandContext: ControlCommandContext {
         value: String,
         icon: String?,
         panelID: UUID?,
-        workState: ControlSidebarAgentWorkState?
+        workState: ControlSidebarAgentWorkState?,
+        persist: Bool
     )?
 
     nonisolated func controlSurfaceParseShellActivityState(
@@ -80,9 +81,10 @@ final class FakeSidebarV1ControlCommandContext: ControlCommandContext {
         format: ControlSidebarMetadataFormat,
         panelID: UUID?,
         pid: Int32?,
-        workState: ControlSidebarAgentWorkState?
+        workState: ControlSidebarAgentWorkState?,
+        persist: Bool
     ) {
-        statusUpsertCall = (target, key, value, icon, panelID, workState)
+        statusUpsertCall = (target, key, value, icon, panelID, workState, persist)
     }
 
     nonisolated func controlSidebarScheduleStatusClear(

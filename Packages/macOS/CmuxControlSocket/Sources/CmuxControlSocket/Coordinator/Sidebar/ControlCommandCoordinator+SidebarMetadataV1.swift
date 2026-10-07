@@ -30,6 +30,16 @@ extension ControlCommandCoordinator {
 
         let key = parsed.positional[0]
         let value = parsed.positional[1...].joined(separator: " ")
+        let persist: Bool
+        if let rawPersist = parsed.options["persist"] {
+            guard let parsedPersist = Bool(rawPersist.lowercased()) else {
+                return "ERROR: Invalid persist value '\(rawPersist)' — use: true, false"
+            }
+            persist = parsedPersist
+        } else {
+            persist = false
+        }
+
         let icon = sidebarNormalizedOptionValue(parsed.options["icon"])
         let color = sidebarNormalizedOptionValue(parsed.options["color"])
 
@@ -76,7 +86,7 @@ extension ControlCommandCoordinator {
         }
         let panelResolution = sidebarParseOptionalPanelIdOption(
             options: parsed.options,
-            usage: "set_status <key> <value> [--icon=X] [--color=#hex] [--url=X] [--priority=N] [--format=plain|markdown] [--work=running|subagents|waiting] [--tab=X] [--panel=ID]"
+            usage: "set_status <key> <value> [--icon=X] [--color=#hex] [--url=X] [--priority=N] [--format=plain|markdown] [--work=running|subagents|waiting] [--persist=true|false] [--tab=X] [--panel=ID]"
         )
         if let error = panelResolution.error {
             return error
@@ -101,7 +111,8 @@ extension ControlCommandCoordinator {
             format: format,
             panelID: panelResolution.panelId,
             pid: pidValue,
-            workState: workState
+            workState: workState,
+            persist: persist
         )
         return "OK"
     }
@@ -142,7 +153,7 @@ extension ControlCommandCoordinator {
     nonisolated func sidebarSetStatus(_ args: String, context: (any ControlCommandContext)?) -> String {
         sidebarUpsertMetadata(
             args,
-            missingError: "ERROR: Missing status key or value — usage: set_status <key> <value> [--icon=X] [--color=#hex] [--url=X] [--priority=N] [--format=plain|markdown] [--work=running|subagents|waiting] [--tab=X]",
+            missingError: "ERROR: Missing status key or value — usage: set_status <key> <value> [--icon=X] [--color=#hex] [--url=X] [--priority=N] [--format=plain|markdown] [--work=running|subagents|waiting] [--persist=true|false] [--tab=X]",
             context: context
         )
     }

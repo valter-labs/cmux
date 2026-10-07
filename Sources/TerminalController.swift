@@ -907,7 +907,8 @@ class TerminalController {
         url: URL?,
         priority: Int,
         format: SidebarMetadataFormat,
-        workState: SidebarAgentWorkState?
+        workState: SidebarAgentWorkState?,
+        persist: Bool = false
     ) -> Bool {
         guard let current else { return true }
         return current.key != key ||
@@ -917,7 +918,8 @@ class TerminalController {
             current.url != url ||
             current.priority != priority ||
             current.format != format ||
-            current.workState != workState
+            current.workState != workState ||
+            current.persist != persist
     }
 
     nonisolated static func shouldReplaceMetadataBlock(
@@ -12040,7 +12042,7 @@ class TerminalController {
           clear_notifications [--tab=X] [--panel=ID] - Clear notifications (all, per-tab, or per-panel)
           set_app_focus <active|inactive|clear> - Override app focus state
           simulate_app_active             - Trigger app active handler
-          set_status <key> <value> [--icon=X] [--color=#hex] [--url=X] [--priority=N] [--format=plain|markdown] [--work=running|subagents|waiting] [--tab=X] - Set a status entry
+          set_status <key> <value> [--icon=X] [--color=#hex] [--url=X] [--priority=N] [--format=plain|markdown] [--work=running|subagents|waiting] [--persist=true|false] [--tab=X] - Set a status entry
           set_agent_lifecycle <key> <unknown|running|idle|needsInput> [--tab=X] [--panel=ID] - Report coding-agent lifecycle for hibernation
           agent_hibernation <on|off> - Enable or disable routine Agent Hibernation
           report_meta <key> <value> [--icon=X] [--color=#hex] [--url=X] [--priority=N] [--format=plain|markdown] [--tab=X] - Set sidebar metadata entry
@@ -14812,6 +14814,16 @@ class TerminalController {
 
         let key = parsed.positional[0]
         let value = parsed.positional[1...].joined(separator: " ")
+        let persist: Bool
+        if let rawPersist = parsed.options["persist"] {
+            guard let parsedPersist = Bool(rawPersist.lowercased()) else {
+                return "ERROR: Invalid persist value '\(rawPersist)' — use: true, false"
+            }
+            persist = parsedPersist
+        } else {
+            persist = false
+        }
+
         let icon = normalizedOptionValue(parsed.options["icon"])
         let color = normalizedOptionValue(parsed.options["color"])
 
@@ -14858,7 +14870,7 @@ class TerminalController {
         }
         let panelResolution = parseOptionalPanelIdOption(
             options: parsed.options,
-            usage: "set_status <key> <value> [--icon=X] [--color=#hex] [--url=X] [--priority=N] [--format=plain|markdown] [--work=running|subagents|waiting] [--tab=X] [--panel=ID]"
+            usage: "set_status <key> <value> [--icon=X] [--color=#hex] [--url=X] [--priority=N] [--format=plain|markdown] [--work=running|subagents|waiting] [--persist=true|false] [--tab=X] [--panel=ID]"
         )
         if let error = panelResolution.error {
             return error
@@ -14885,7 +14897,8 @@ class TerminalController {
                 url: parsedURL,
                 priority: priority,
                 format: format,
-                workState: workState
+                workState: workState,
+                persist: persist
             ) else {
                 // Still update PID tracking even if the status display hasn't changed.
                 if let pidValue {
@@ -14902,7 +14915,8 @@ class TerminalController {
                 priority: priority,
                 format: format,
                 timestamp: Date(),
-                workState: workState
+                workState: workState,
+                persist: persist
             )
             if let pidValue {
                 tab.recordAgentPID(key: key, pid: pidValue, panelId: panelResolution.panelId)

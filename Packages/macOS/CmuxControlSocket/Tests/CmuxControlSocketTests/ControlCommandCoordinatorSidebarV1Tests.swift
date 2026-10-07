@@ -5,6 +5,30 @@ import Testing
 @MainActor
 @Suite("ControlCommandCoordinator sidebar v1 dispatch")
 struct ControlCommandCoordinatorSidebarV1Tests {
+    @Test func statusPersistenceIsExplicitAndValidatedBeforeMutation() {
+        for (option, expected) in [("", false), (" --persist true", true), (" --persist=false", false)] {
+            let context = FakeSidebarV1ControlCommandContext()
+            let coordinator = ControlCommandCoordinator(context: context)
+            let response = coordinator.handleSidebarV1(
+                command: "set_status",
+                args: "history Last conversation --tab=\(UUID().uuidString)\(option)"
+            )
+            #expect(response == "OK")
+            #expect(context.statusUpsertCall?.persist == expected)
+            #expect(context.statusUpsertCall?.value == "Last conversation")
+        }
+        for option in [" --persist", " --persist=maybe"] {
+            let context = FakeSidebarV1ControlCommandContext()
+            let coordinator = ControlCommandCoordinator(context: context)
+            let response = coordinator.handleSidebarV1(
+                command: "set_status",
+                args: "history Last conversation --tab=\(UUID().uuidString)\(option)"
+            )
+            #expect(response?.hasPrefix("ERROR: Invalid persist value") == true)
+            #expect(context.statusUpsertCall == nil)
+        }
+    }
+
     @Test func agentPIDClearForwardsOwnedKeyRequirement() {
         let context = FakeSidebarV1ControlCommandContext()
         let coordinator = ControlCommandCoordinator(context: context)

@@ -322,6 +322,7 @@ struct SessionStatusEntrySnapshot: Codable, Sendable {
     var icon: String?
     var color: String?
     var timestamp: TimeInterval
+    var persist: Bool? = nil
 }
 
 struct SessionLogEntrySnapshot: Codable, Sendable {

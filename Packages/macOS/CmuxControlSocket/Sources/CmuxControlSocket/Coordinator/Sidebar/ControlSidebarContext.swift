@@ -63,7 +63,8 @@ public protocol ControlSidebarContext: AnyObject {
         format: ControlSidebarMetadataFormat,
         panelID: UUID?,
         pid: Int32?,
-        workState: ControlSidebarAgentWorkState?
+        workState: ControlSidebarAgentWorkState?,
+        persist: Bool
     )
 
     /// Enqueues the `clear_status`/`clear_meta` removal mutation.

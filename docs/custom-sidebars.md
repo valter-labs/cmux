@@ -346,10 +346,13 @@ with:
   belongs to the tool that publishes it; its publication time does not establish
   when the underlying activity happened.
 
-  Status entries are saved in session snapshots, but cmux clears them when
-  restoring a workspace because they may describe processes that no longer
-  exist. Tools publishing historical data must reconcile and republish their
-  own entries after restoration.
+  `cmux set-status <key> <value> --persist true` explicitly keeps that entry
+  across workspace restoration. The default is `false`: existing runtime status
+  reporters remain transient because their processes may no longer exist.
+  Restoring a persistent entry never restores agent PIDs or execution state.
+  Tools can check `cmux capabilities` for
+  `custom_sidebar.workspace_status_entries` and
+  `custom_sidebar.persistent_status_entries` before publishing durable data.
 
   `status` is always reported, independently of whether the built-in status
   glyph is visible. That glyph needs two further conditions the context does

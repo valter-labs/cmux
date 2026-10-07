@@ -27,7 +27,8 @@ extension TerminalController: ControlSidebarContext {
         format: ControlSidebarMetadataFormat,
         panelID: UUID?,
         pid: Int32?,
-        workState: ControlSidebarAgentWorkState?
+        workState: ControlSidebarAgentWorkState?,
+        persist: Bool = false
     ) {
         let appFormat = SidebarMetadataFormat(rawValue: format.rawValue) ?? .plain
         let appWorkState = workState.flatMap { SidebarAgentWorkState(rawValue: $0.rawValue) }
@@ -41,7 +42,8 @@ extension TerminalController: ControlSidebarContext {
                 url: url,
                 priority: priority,
                 format: appFormat,
-                workState: appWorkState
+                workState: appWorkState,
+                persist: persist
             ) else {
                 // Still update PID tracking even if the status display hasn't changed.
                 if let pid {
@@ -58,7 +60,8 @@ extension TerminalController: ControlSidebarContext {
                 priority: priority,
                 format: appFormat,
                 timestamp: Date(),
-                workState: appWorkState
+                workState: appWorkState,
+                persist: persist
             ), key: key, panelId: panelID)
             if let pid {
                 owner.recordAgentPID(key: key, pid: pid, panelId: panelID)
