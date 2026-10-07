@@ -31,6 +31,48 @@ final class WorkspaceCustomSidebarPullRequestContextTests: XCTestCase {
         XCTAssertNotEqual(updatedFingerprint, manager.sessionAutosaveFingerprint())
     }
 
+    @MainActor
+    func testPersistentStatusRestoresPresentationWithoutRuntimeState() throws {
+        let workspace = Workspace()
+        let key = "review"
+        let url = try XCTUnwrap(URL(string: "https://example.com/review"))
+        workspace.statusEntries[key] = SidebarStatusEntry(
+            key: key, value: "**Ready**", url: url, priority: 80,
+            format: .markdown, helpText: "Review details", workState: .running, persist: true
+        )
+        let encoded = try JSONEncoder().encode(workspace.sessionSnapshot(includeScrollback: false))
+        let snapshot = try JSONDecoder().decode(SessionWorkspaceSnapshot.self, from: encoded)
+        let restored = Workspace()
+        restored.restoreSessionSnapshot(snapshot)
+        let entry = try XCTUnwrap(restored.statusEntries[key])
+        XCTAssertEqual(entry.url, url)
+        XCTAssertEqual(entry.priority, 80)
+        XCTAssertEqual(entry.format, .markdown)
+        XCTAssertEqual(entry.helpText, "Review details")
+        XCTAssertNil(entry.workState)
+    }
+
+    @MainActor
+    func testAutosaveTracksPersistentStatusPresentation() throws {
+        let manager = TabManager()
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        let key = "review"
+        let time = Date(timeIntervalSince1970: 0)
+        let entries = [
+            SidebarStatusEntry(key: key, value: "Ready", timestamp: time, persist: true),
+            SidebarStatusEntry(key: key, value: "Ready", url: URL(string: "https://example.com"), timestamp: time, persist: true),
+            SidebarStatusEntry(key: key, value: "Ready", priority: 80, timestamp: time, persist: true),
+            SidebarStatusEntry(key: key, value: "Ready", format: .markdown, timestamp: time, persist: true),
+            SidebarStatusEntry(key: key, value: "Ready", timestamp: time, helpText: "Details", persist: true)
+        ]
+        var fingerprints = Set<Int>()
+        for entry in entries {
+            workspace.statusEntries[key] = entry
+            fingerprints.insert(manager.sessionAutosaveFingerprint())
+        }
+        XCTAssertEqual(fingerprints.count, entries.count)
+    }
+
     func testCapabilitiesAdvertiseCustomSidebarStatusSupport() throws {
         let capabilities = TerminalController.shared.v2CapabilitiesWithBrowserDesignMode(params: [:])
         let customSidebar = try XCTUnwrap(capabilities["custom_sidebar"] as? [String: Bool])
