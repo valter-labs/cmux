@@ -11,6 +11,32 @@ import CmuxSwiftRender
 
 final class WorkspaceCustomSidebarPullRequestContextTests: XCTestCase {
     @MainActor
+    func testSessionRestoreKeepsOnlyExplicitlyPersistentStatusEntries() throws {
+        let workspace = Workspace()
+        let key = "historical-data"
+        let value = "Última conversa: 2026-10-07T09:00:00Z"
+        workspace.statusEntries[key] = SidebarStatusEntry(key: key, value: value)
+        workspace.statusEntries["claude_code"] = SidebarStatusEntry(key: "claude_code", value: "Running")
+        let snapshot = workspace.sessionSnapshot(includeScrollback: false)
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(snapshot)) as? [String: Any])
+        var entries = try XCTUnwrap(json["statusEntries"] as? [[String: Any]])
+        let historicalIndex = try XCTUnwrap(entries.firstIndex { $0["key"] as? String == key })
+        entries[historicalIndex]["persist"] = true
+        json["statusEntries"] = entries
+        let decoded = try JSONDecoder().decode(SessionWorkspaceSnapshot.self, from: JSONSerialization.data(withJSONObject: json))
+        let restored = Workspace()
+        restored.restoreSessionSnapshot(decoded)
+
+        XCTAssertEqual(restored.statusEntries[key]?.value, value)
+        XCTAssertNil(restored.statusEntries["claude_code"])
+        XCTAssertNil(restored.statusEntries[key]?.workState)
+        XCTAssertEqual(
+            restored.customSidebarWorkspaceSnapshot(index: 0, selectedId: nil, unreadCount: 0).statusEntries,
+            [key: value]
+        )
+    }
+
+    @MainActor
     func testCustomSidebarStatusTextsProjectAndSurviveSessionEncoding() throws {
         let workspace = Workspace()
         let key = "cmux-safe-ops.last-turn.v1"
