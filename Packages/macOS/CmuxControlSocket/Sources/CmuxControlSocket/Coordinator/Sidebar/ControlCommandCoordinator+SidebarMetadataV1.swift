@@ -195,7 +195,18 @@ extension ControlCommandCoordinator {
         if options["json"] == "true" {
             // Native snapshots originate from the workspace's keyed status dictionary.
             let values = Dictionary(uniqueKeysWithValues: entries.map { ($0.key, JSONValue.string($0.value)) })
-            return ControlResponseEncoder().encode(.object(["entries": .object(values)]))
+            var metadata: [String: JSONValue] = [:]
+            for entry in entries {
+                var attributes: [String: JSONValue] = [:]
+                if let icon = entry.icon { attributes["icon"] = .string(icon) }
+                if let color = entry.color { attributes["color"] = .string(color) }
+                if let url = entry.urlAbsoluteString { attributes["url"] = .string(url) }
+                if entry.priority != 0 { attributes["priority"] = .int(Int64(entry.priority)) }
+                if entry.format != .plain { attributes["format"] = .string(entry.format.rawValue) }
+                if let work = entry.workState { attributes["work"] = .string(work.rawValue) }
+                if !attributes.isEmpty { metadata[entry.key] = .object(attributes) }
+            }
+            return ControlResponseEncoder().encode(.object(["entries": .object(values), "metadata": .object(metadata)]))
         }
         if entries.isEmpty {
             return emptyMessage
