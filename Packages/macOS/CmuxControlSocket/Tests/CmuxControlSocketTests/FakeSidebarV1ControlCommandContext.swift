@@ -3,6 +3,12 @@ import Foundation
 
 @MainActor
 final class FakeSidebarV1ControlCommandContext: ControlCommandContext {
+    var statusEntries: [ControlSidebarStatusEntrySnapshot]?
+
+    func controlSidebarStatusEntries(tabArg: String?) -> [ControlSidebarStatusEntrySnapshot]? {
+        statusEntries
+    }
+
     var workspaceLoadingResult: ControlSidebarWorkspaceLoadingState?
     var workspaceLoadingCall: (tabArg: String?, key: String, on: Bool)?
     // Test-only synchronous seam: calls and reads are serial within each test.

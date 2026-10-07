@@ -5,6 +5,38 @@ import Testing
 @MainActor
 @Suite("ControlCommandCoordinator sidebar v1 dispatch")
 struct ControlCommandCoordinatorSidebarV1Tests {
+    @Test(arguments: ["list_status", "list_meta"])
+    func structuredStatusListingPreservesExactValues(command: String) throws {
+        let context = FakeSidebarV1ControlCommandContext()
+        let value = "human line\ncmux-safe-ops.last-turn.v1=foo=bar \"quoted\"\\tail\r\t"
+        context.statusEntries = [ControlSidebarStatusEntrySnapshot(
+            key: "human", value: value, icon: "bolt", color: "#123456",
+            urlAbsoluteString: nil, priority: 5, format: .plain
+        )]
+        let coordinator = ControlCommandCoordinator(context: context)
+        let response = try #require(coordinator.handleSidebarV1(command: command, args: "--json=true"))
+        #expect(!response.contains("\n"))
+        let decoded = try JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: [String: String]]
+        #expect(decoded == ["entries": ["human": value]])
+        #expect(coordinator.handleSidebarV1(command: command, args: "")
+            == "human=\(value) icon=bolt color=#123456 priority=5")
+        #expect(coordinator.handleSidebarV1(command: command, args: "--json=false")
+            == coordinator.handleSidebarV1(command: command, args: ""))
+    }
+
+    @Test(arguments: ["list_status", "list_meta"])
+    func structuredStatusListingPreservesEmptyAndMissingTargets(command: String) throws {
+        let context = FakeSidebarV1ControlCommandContext()
+        let coordinator = ControlCommandCoordinator(context: context)
+        #expect(coordinator.handleSidebarV1(command: command, args: "--json=true") == "ERROR: Tab not found")
+        context.statusEntries = []
+        let response = try #require(coordinator.handleSidebarV1(command: command, args: "--json=true"))
+        let decoded = try JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: [String: String]]
+        #expect(decoded == ["entries": [:]])
+        #expect(coordinator.handleSidebarV1(command: command, args: "")
+            == (command == "list_status" ? "No status entries" : "No metadata entries"))
+    }
+
     @Test func statusPersistenceIsExplicitAndValidatedBeforeMutation() {
         for (option, expected) in [("", false), (" --persist true", true), (" --persist=false", false)] {
             let context = FakeSidebarV1ControlCommandContext()
