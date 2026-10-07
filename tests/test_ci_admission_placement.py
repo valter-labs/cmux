@@ -11,6 +11,8 @@ from pathlib import Path
 
 import yaml
 
+from test_seed_derived_data import evaluate
+
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts/ci/admission_placement.py"
 WORKFLOWS = ROOT / ".github/workflows"
@@ -133,6 +135,39 @@ class Workflow(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.jobs = yaml.safe_load((WORKFLOWS / "ci-macos.yml").read_text())["jobs"]
+
+    def test_hosted_fork_budget_covers_compile_setup_and_changed_tests(self):
+        admission = self.jobs["macos-compile-admission"]
+        compile_step = next(step for step in admission["steps"] if step.get("id") == "hosted-compile")
+        for owner in ("valter-labs", "another-fork"):
+            for changed_tests in ("false", "true"):
+                with self.subTest(owner=owner, changed_tests=changed_tests):
+                    context = {
+                        "github": {"repository_owner": owner},
+                        "inputs": {"unit_in_admission": changed_tests},
+                        "env": {"CMUX_PRODUCT_RUNNER": "macos-26"},
+                    }
+                    compile_minutes = evaluate(compile_step["timeout-minutes"], context)
+                    test_minutes = int(admission["env"]["CMUX_UNIT_TEST_TIMEOUT_SECONDS"]) / 60 if changed_tests == "true" else 0
+                    # The cold compile gets its full ceiling before setup, publication and tests consume the job budget.
+                    self.assertGreaterEqual(
+                        evaluate(admission["timeout-minutes"], context),
+                        compile_minutes + 20 + test_minutes,
+                    )
+
+    def test_manaflow_admission_budgets_stay_unchanged(self):
+        admission = self.jobs["macos-compile-admission"]
+        compile_step = next(step for step in admission["steps"] if step.get("id") == "hosted-compile")
+        for runner, compile_minutes in (("glaeda-root-std-xcode-26.6", 35), ("blacksmith-6vcpu-macos-26", 100)):
+            for changed_tests, job_minutes in (("false", 75), ("true", 105)):
+                with self.subTest(runner=runner, changed_tests=changed_tests):
+                    context = {
+                        "github": {"repository_owner": "manaflow-ai"},
+                        "inputs": {"unit_in_admission": changed_tests},
+                        "env": {"CMUX_PRODUCT_RUNNER": runner},
+                    }
+                    self.assertEqual(evaluate(admission["timeout-minutes"], context), job_minutes)
+                    self.assertEqual(evaluate(compile_step["timeout-minutes"], context), compile_minutes)
 
     def test_the_pin_is_picked_in_the_job_admission_waits_for(self):
         spec = self.jobs["admission-placement"]
