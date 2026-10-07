@@ -1,4 +1,5 @@
 import XCTest
+import CmuxSidebar
 import CmuxWorkspaces
 import CmuxSwiftRender
 
@@ -9,6 +10,43 @@ import CmuxSwiftRender
 #endif
 
 final class WorkspaceCustomSidebarPullRequestContextTests: XCTestCase {
+    @MainActor
+    func testCustomSidebarStatusTextsProjectAndSurviveSessionEncoding() throws {
+        let workspace = Workspace()
+        let key = "cmux-safe-ops.last-turn.v1"
+        let value = "Última conversa: 2026-10-07T09:00:00Z"
+        let publicationTime = Date(timeIntervalSince1970: 1_800_000_000)
+        workspace.statusEntries[key] = SidebarStatusEntry(
+            key: key,
+            value: value,
+            icon: "clock",
+            color: "#123456",
+            timestamp: publicationTime
+        )
+        workspace.statusEntries["deploy"] = SidebarStatusEntry(key: "deploy", value: "Ready")
+        let expected = [key: value, "deploy": "Ready"]
+        let builder = CustomSidebarDataContextBuilder()
+        let projected = workspace.customSidebarWorkspaceSnapshot(index: 0, selectedId: workspace.id, unreadCount: 0)
+
+        XCTAssertEqual(projected.statusEntries, expected)
+        XCTAssertEqual(
+            builder.workspaceValue(projected).member("statusEntries"),
+            .object(expected.mapValues { .string($0) })
+        )
+
+        let snapshot = workspace.sessionSnapshot(includeScrollback: false)
+        let decoded = try JSONDecoder().decode(SessionWorkspaceSnapshot.self, from: JSONEncoder().encode(snapshot))
+        let encodedEntry = try XCTUnwrap(decoded.statusEntries.first { $0.key == key })
+        XCTAssertEqual(encodedEntry.value, value)
+        XCTAssertEqual(encodedEntry.timestamp, publicationTime.timeIntervalSince1970)
+
+        workspace.statusEntries[key] = SidebarStatusEntry(key: key, value: "Última conversa: 2026-10-07T10:00:00Z")
+        let updated = workspace.customSidebarWorkspaceSnapshot(index: 0, selectedId: workspace.id, unreadCount: 0)
+        XCTAssertEqual(updated.statusEntries[key], "Última conversa: 2026-10-07T10:00:00Z")
+        XCTAssertEqual(updated.statusEntries["deploy"], "Ready")
+        XCTAssertEqual(projected.statusEntries, expected)
+    }
+
     @MainActor
     func testCustomSidebarSurfacePersistsAndRestoresAsPane() throws {
         let sidebarName = "__cmux_restore_sidebar_\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))"

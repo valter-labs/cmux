@@ -91,6 +91,7 @@ public struct CustomSidebarDataContextBuilder {
             "portCount": .int(workspace.listeningPorts.count),
             "unread": .int(workspace.unreadCount),
             "status": .string(workspace.taskStatus),
+            "statusEntries": .object(workspace.statusEntries.mapValues { .string($0) }),
             "tabs": .array(workspace.surfaces.map(surfaceValue(_:))),
             "tabCount": .int(workspace.surfaceCount),
         ]

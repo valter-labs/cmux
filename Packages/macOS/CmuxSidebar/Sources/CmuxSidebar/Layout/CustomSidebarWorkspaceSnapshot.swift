@@ -65,6 +65,11 @@ public struct CustomSidebarWorkspaceSnapshot: Sendable, Equatable {
     /// package does not depend on the app-side enum, the same way
     /// `ControlWorkspaceTodoStatusSnapshot` crosses its seam.
     public let taskStatus: String
+    /// Status-entry texts by key (`workspaces[i].statusEntries`), always an object.
+    ///
+    /// Values are preserved verbatim, including empty strings. Entry publication
+    /// timestamps and presentation metadata are not part of this projection.
+    public let statusEntries: [String: String]
     /// Surfaces in pane order (`workspaces[i].tabs`).
     public let surfaces: [CustomSidebarSurfaceSnapshot]
     /// Total surface count across panes (`workspaces[i].tabCount`).
@@ -98,6 +103,9 @@ public struct CustomSidebarWorkspaceSnapshot: Sendable, Equatable {
     public let agents: [CustomSidebarAgentSnapshot]
 
     /// Creates a workspace snapshot from already-resolved leaf values.
+    ///
+    /// - Parameter statusEntries: Status-entry texts by key; defaults to an
+    ///   empty dictionary for workspaces without status entries.
     public init(
         id: UUID,
         title: String,
@@ -121,9 +129,11 @@ public struct CustomSidebarWorkspaceSnapshot: Sendable, Equatable {
         remote: Remote?,
         agents: [CustomSidebarAgentSnapshot] = [],
         groupId: UUID? = nil,
-        taskStatus: String
+        taskStatus: String,
+        statusEntries: [String: String] = [:]
     ) {
         self.taskStatus = taskStatus
+        self.statusEntries = statusEntries
         self.groupId = groupId
         self.id = id
         self.title = title

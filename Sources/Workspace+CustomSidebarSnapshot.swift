@@ -47,7 +47,8 @@ extension Workspace {
             remote: remote,
             agents: customSidebarAgentSnapshots(),
             groupId: groupId,
-            taskStatus: effectiveTaskStatus.rawValue
+            taskStatus: effectiveTaskStatus.rawValue,
+            statusEntries: sidebarMetadata.statusEntries.mapValues(\.value)
         )
     }
 

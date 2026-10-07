@@ -330,7 +330,7 @@ with:
 
 - `workspaces` — array, one per workspace. Always present: `id`, `title`,
   `selected` (Bool), `pinned` (Bool), `index` (Int), `directory`, `ports`
-  (array of Int) + `portCount`, `unread` (Int notifications), `status`, `tabs` +
+  (array of Int) + `portCount`, `unread` (Int notifications), `status`, `statusEntries`, `tabs` +
   `tabCount`. `status` is the workspace's task-status lane, one of `todo`,
   `working`, `needs-attention`, `review` or `done`. It is the resolved lane:
   a manual pin set through `cmux workspace status set` or the sidebar menu
@@ -338,6 +338,18 @@ with:
   (an agent waiting on input, a running agent, an open pull request, a dirty
   working tree). An external tool that pins the lane through
   `cmux workspace status set` shows up here too.
+
+  `statusEntries` is an object mapping each workspace status key to its text
+  value, for example `{ "deploy": "Ready" }`. It is `{}` when empty and
+  preserves all keys and values, including empty strings. Entry publication
+  timestamps, icons, and colors are not exposed. The meaning of a status text
+  belongs to the tool that publishes it; its publication time does not establish
+  when the underlying activity happened.
+
+  Status entries are saved in session snapshots, but cmux clears them when
+  restoring a workspace because they may describe processes that no longer
+  exist. Tools publishing historical data must reconcile and republish their
+  own entries after restoration.
 
   `status` is always reported, independently of whether the built-in status
   glyph is visible. That glyph needs two further conditions the context does
