@@ -5,6 +5,56 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 WORKFLOW_FILE="$ROOT_DIR/.github/workflows/nightly.yml"
 
+python3 - "$ROOT_DIR" "$WORKFLOW_FILE" <<'PYTHON'
+import os
+from pathlib import Path
+import subprocess
+import sys
+import yaml
+
+root = Path(sys.argv[1])
+sys.path.insert(0, str(root / "tests"))
+from test_seed_derived_data import evaluate
+
+workflow = yaml.safe_load(Path(sys.argv[2]).read_text())
+app = workflow["jobs"]["build-nightly-app"]
+selection = next(step["run"] for step in app["steps"] if step.get("name") == "Build nightly app (Release)").split("# Let xcodebuild fan out", 1)[0]
+errors = []
+for repo, build_only, requested, expected_archs, expected_active, minutes in (
+    ("valter-labs/cmux", "true", "universal", "arm64 x86_64", "NO", 150),
+    ("valter-labs/cmux", "true", "arm64", "arm64", "YES", 150),
+    ("valter-labs/cmux", "false", "arm64", "arm64 x86_64", "NO", 90),
+    ("manaflow-ai/cmux", "true", "arm64", "arm64", "YES", 90),
+    ("manaflow-ai/cmux", "false", "arm64", "arm64 x86_64", "NO", 90),
+    ("other/cmux", "true", "universal", "arm64 x86_64", "NO", 90),
+):
+    context = {"github": {"repository": repo, "event_name": "workflow_dispatch"},
+               "inputs": {"build_only": build_only == "true", "build_only_archs": requested},
+               "needs": {"decide": {"outputs": {"build_only": build_only, "should_build": "true", "fast_build": "false"}}}}
+    actual = evaluate(str(app["timeout-minutes"]), context)
+    if actual != minutes:
+        errors.append(f"{repo} build_only={build_only}: expected {minutes} minutes, got {actual}")
+    env = dict(os.environ, NIGHTLY_FAST_BUILD="false",
+               NIGHTLY_BUILD_ONLY_ARCHS=str(evaluate(app["env"].get("NIGHTLY_BUILD_ONLY_ARCHS", "'universal'"), context)))
+    result = subprocess.run(["bash", "-c", selection + 'printf "%s\\n%s\\n" "$archs" "$only_active"'],
+                            cwd=root, env=env, capture_output=True, text=True, check=True)
+    if result.stdout.splitlines() != [expected_archs, expected_active]:
+        errors.append(f"{repo} build_only={build_only} archs={requested}: got {result.stdout.strip()!r}")
+    if build_only == "true":
+        for job in ("build-nightly-ghostty-cli-helper", "resolve-nightly-cmux-tui-client", "build-sign-notarize-nightly", "publish-nightly"):
+            if evaluate(workflow["jobs"][job]["if"], context):
+                errors.append(f"build_only must exclude {job}")
+        if not evaluate(app["if"], context):
+            errors.append("build_only must run the unsigned app job")
+inputs = workflow.get("on", workflow.get(True))["workflow_dispatch"]["inputs"]
+choice = inputs.get("build_only_archs", {})
+if choice.get("default") != "universal" or choice.get("options") != ["universal", "arm64"]:
+    errors.append("build_only_archs must default to universal and offer only universal or arm64")
+if errors:
+    raise SystemExit("FAIL: " + "\nFAIL: ".join(errors))
+print("PASS: six measurement/publication contexts preserve architecture, timeout, and unsigned-only gates")
+PYTHON
+
 if ! awk '
   /^      - name: Build nightly app \(Release\)/ { in_build=1; next }
   in_build && /^      - name:/ { in_build=0 }
