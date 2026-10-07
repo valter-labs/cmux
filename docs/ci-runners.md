@@ -136,8 +136,13 @@ the same cost profile or the same urgency.
   `macos-26`; fork pull requests keep those shards on the Blacksmith 15
   fallback. Other PR jobs still use `MACOS_RUNNER_PR`; unset means the
   Blacksmith fallback. PR runs are cancelled on supersession by design, so
-  they are the wrong place to spend elastic paid capacity. A fork uses the
-  GitHub-hosted branch described below instead.
+  they are the wrong place to spend elastic paid capacity.
+- **Workflow runs in repositories outside `manaflow-ai`** use GitHub-hosted
+  `macos-26` for compile admission and its app-host and CLI product consumers,
+  keeping the compile's selected Xcode. The consumers' requested-runner guard
+  checks that same hosted route. This avoids queues for unavailable external
+  Blacksmith capacity; it changes no test selection or verification gate. Fork
+  pull requests running in `manaflow-ai/cmux` retain the upstream routing above.
 - **Test-only lanes** (`test-e2e.yml`, `test-macos-suite.yml`, `test-ios.yml`
   on `auto`, the `iroh-v2.yml` client) resolve through
   `MACOS_RUNNER_TESTS` first, and deliberately do **not** follow `MACOS_RUNNER_15`.
