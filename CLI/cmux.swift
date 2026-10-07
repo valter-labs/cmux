@@ -8195,9 +8195,13 @@ struct CMUXCLI {
             )
             print(response)
         case "list-status":
+            var statusArgs = commandArgs
+            if jsonOutput {
+                statusArgs.insert("--json=true", at: statusArgs.firstIndex(of: "--") ?? statusArgs.count)
+            }
             let response = try forwardSidebarMetadataCommand(
                 "list_status",
-                commandArgs: commandArgs + (jsonOutput ? ["--json=true"] : []),
+                commandArgs: statusArgs,
                 client: client,
                 windowOverride: windowId
             )
