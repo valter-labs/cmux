@@ -123,6 +123,9 @@ extension ControlCommandCoordinator {
         if let error = panelResolution.error {
             return error
         }
+        if condition.condition != nil && panelResolution.panelId != nil {
+            return "ERROR: Conditional status mutations do not support --panel"
+        }
 
         let pidValue: Int32? = {
             if let rawPid = sidebarNormalizedOptionValue(parsed.options["pid"]),
@@ -174,6 +177,9 @@ extension ControlCommandCoordinator {
         )
         if let error = panelResolution.error {
             return error
+        }
+        if condition.condition != nil && panelResolution.panelId != nil {
+            return "ERROR: Conditional status mutations do not support --panel"
         }
 
         context?.controlSidebarScheduleStatusClear(
