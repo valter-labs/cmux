@@ -11,15 +11,24 @@ struct ControlCommandCoordinatorSidebarV1Tests {
         let value = "human line\ncmux-safe-ops.last-turn.v1=foo=bar \"quoted\"\\tail\r\t"
         context.statusEntries = [ControlSidebarStatusEntrySnapshot(
             key: "human", value: value, icon: "bolt", color: "#123456",
-            urlAbsoluteString: nil, priority: 5, format: .plain
+            urlAbsoluteString: "https://example.com/path?a=b", priority: 5, format: .markdown, workState: .waiting
+        ), ControlSidebarStatusEntrySnapshot(
+            key: "default", value: "normal", icon: nil, color: nil,
+            urlAbsoluteString: nil, priority: 0, format: .plain
         )]
         let coordinator = ControlCommandCoordinator(context: context)
         let response = try #require(coordinator.handleSidebarV1(command: command, args: "--json=true"))
         #expect(!response.contains("\n"))
-        let decoded = try JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: [String: String]]
-        #expect(decoded == ["entries": ["human": value]])
+        let decoded = JSONValue(foundationObject: try JSONSerialization.jsonObject(with: Data(response.utf8)))
+        #expect(decoded == .object([
+            "entries": .object(["human": .string(value), "default": .string("normal")]),
+            "metadata": .object(["human": .object([
+                "icon": .string("bolt"), "color": .string("#123456"), "url": .string("https://example.com/path?a=b"),
+                "priority": .int(5), "format": .string("markdown"), "work": .string("waiting")
+            ])])
+        ]))
         #expect(coordinator.handleSidebarV1(command: command, args: "")
-            == "human=\(value) icon=bolt color=#123456 priority=5")
+            == "human=\(value) icon=bolt color=#123456 url=https://example.com/path?a=b priority=5 format=markdown work=waiting\ndefault=normal")
         #expect(coordinator.handleSidebarV1(command: command, args: "--json=false")
             == coordinator.handleSidebarV1(command: command, args: ""))
     }
@@ -31,8 +40,8 @@ struct ControlCommandCoordinatorSidebarV1Tests {
         #expect(coordinator.handleSidebarV1(command: command, args: "--json=true") == "ERROR: Tab not found")
         context.statusEntries = []
         let response = try #require(coordinator.handleSidebarV1(command: command, args: "--json=true"))
-        let decoded = try JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: [String: String]]
-        #expect(decoded == ["entries": [:]])
+        let decoded = JSONValue(foundationObject: try JSONSerialization.jsonObject(with: Data(response.utf8)))
+        #expect(decoded == .object(["entries": .object([:]), "metadata": .object([:])]))
         #expect(coordinator.handleSidebarV1(command: command, args: "")
             == (command == "list_status" ? "No status entries" : "No metadata entries"))
     }
