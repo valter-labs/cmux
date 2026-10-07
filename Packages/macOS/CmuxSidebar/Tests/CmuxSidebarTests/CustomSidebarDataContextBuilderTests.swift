@@ -95,6 +95,14 @@ struct CustomSidebarDataContextBuilderTests {
         #expect(context["workspaceCount"] == .int(0))
     }
 
+    @Test("Workspace status entries are always an object, including when empty")
+    func workspaceStatusEntriesAlwaysPresent() {
+        let builder = CustomSidebarDataContextBuilder()
+        let value = builder.workspaceValue(minimalWorkspace())
+
+        #expect(value.member("statusEntries") == .object([:]))
+    }
+
     @Test("Clock components derive from the injected calendar")
     func clockComponents() {
         let builder = CustomSidebarDataContextBuilder(calendar: fixedCalendar())
