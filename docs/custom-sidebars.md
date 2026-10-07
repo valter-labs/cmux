@@ -383,7 +383,10 @@ with:
   An explicitly empty observed value is valid. Conditions are checked on the main
   queue immediately before mutation, including before any agent PID update, so an
   intervening human edit is preserved.
-  The flags are mutually exclusive; invalid conditions fail before enqueueing.
+  The flags are mutually exclusive. Conditional mutations are workspace-scoped:
+  `--panel` or its `--surface` alias with either condition is rejected before
+  enqueueing. Invalid conditions
+  fail before enqueueing.
   An omitted condition retains the existing unconditional public CLI behavior.
   An enqueue acknowledgment does not prove the condition passed; confirm the
   intended result with structured readback.
