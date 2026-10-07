@@ -374,6 +374,20 @@ with:
   presentation attributes as well as text so an unchanged value with a manually
   added icon, link, color or format does not lose the user's edit.
 
+  For an owned entry, require `custom_sidebar.conditional_status_entries` before
+  changing it based on readback. `set-status --if-absent=true` creates only when
+  the key is absent; `set-status` or `clear-status` with
+  `--if-default-value=<observed-value>` changes only that exact default-styled
+  value. Default style means no icon, color, URL or live work state, priority `0`
+  and plain format; persistence, help text and timestamp are not condition inputs.
+  An explicitly empty observed value is valid. Conditions are checked on the main
+  queue immediately before mutation, including before any agent PID update, so an
+  intervening human edit is preserved.
+  The flags are mutually exclusive; invalid conditions fail before enqueueing.
+  An omitted condition retains the existing unconditional public CLI behavior.
+  An enqueue acknowledgment does not prove the condition passed; confirm the
+  intended result with structured readback.
+
   `status` is always reported, independently of whether the built-in status
   glyph is visible. That glyph needs two further conditions the context does
   not carry: the workspace-todo feature has to be on, which happens through the

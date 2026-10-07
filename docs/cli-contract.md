@@ -199,8 +199,8 @@ Environment:
 | `jump-to-unread` | Focus the latest unread notification. |
 | `clear-notifications` | Clear queued notifications, optionally scoped to a workspace, surface, and `--window` context. |
 | `right-sidebar` | Control right sidebar visibility, mode, focus, and state reads. |
-| `set-status` | Set a sidebar status pill; `--persist true` retains its presentation across workspace restoration. |
-| `clear-status` | Remove a sidebar status pill. |
+| `set-status` | Set a sidebar status pill; `--persist true` retains its presentation across workspace restoration. `--if-absent=true` or `--if-default-value=<observed-value>` requests a mutually exclusive native queue-time guard. |
+| `clear-status` | Remove a sidebar status pill; `--if-default-value=<observed-value>` removes only that exact default-styled entry, preserving intervening human edits. |
 | `list-status` | List sidebar status pills; `--json` returns exact key/value strings in `entries` and non-default presentation attributes in `metadata`, preserving multiline values. |
 | `set-progress` | Set sidebar progress. |
 | `clear-progress` | Clear sidebar progress. |
