@@ -60,13 +60,15 @@ extension ControlSidebarContext {
         panelID: UUID?,
         pid: Int32?,
         workState: ControlSidebarAgentWorkState?,
-        persist: Bool
+        persist: Bool,
+        condition: ControlSidebarStatusCondition?
     ) {}
 
     nonisolated func controlSidebarScheduleStatusClear(
         target: ControlSidebarTabTarget,
         key: String,
-        panelID: UUID?
+        panelID: UUID?,
+        condition: ControlSidebarStatusCondition?
     ) {}
 
     nonisolated func controlSidebarScheduleAgentPIDRecord(

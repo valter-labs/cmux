@@ -64,6 +64,55 @@ struct ControlCommandCoordinatorSidebarV1Tests {
         }
     }
 
+    @Test(arguments: ["set_status", "report_meta", "clear_status", "clear_meta"])
+    func statusConditionsForwardExactValuesAndLegacyNil(command: String) {
+        let expected = " observed\nfoo=bar \"quoted\"\\tail\r\t "
+        let quoted = expected.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\r", with: "\\r")
+            .replacingOccurrences(of: "\t", with: "\\t")
+        for (option, expectedCondition) in [
+            ("", nil), ("--if-absent=true", ControlSidebarStatusCondition.absent),
+            ("--if-default-value=\"\(quoted)\"", .defaultValue(expected)),
+            ("--if-default-value=", .defaultValue(""))
+        ] {
+            let context = FakeSidebarV1ControlCommandContext()
+            let coordinator = ControlCommandCoordinator(context: context)
+            let value = command.hasPrefix("clear") ? "" : " replacement"
+            #expect(coordinator.handleSidebarV1(
+                command: command, args: "history\(value) --tab=\(UUID().uuidString) \(option)"
+            ) == "OK")
+            if command.hasPrefix("clear") {
+                #expect(context.statusClearCall != nil)
+                #expect(context.statusClearCall?.condition == expectedCondition)
+            } else {
+                #expect(context.statusUpsertCall != nil)
+                #expect(context.statusUpsertCall?.condition == expectedCondition)
+            }
+        }
+    }
+
+    @Test func statusConditionsMatchOnlyAbsentOrExactDefaultPresentation() {
+        let value = "e\u{0301}\nfoo=bar \"quoted\""
+        let condition = ControlSidebarStatusCondition.defaultValue(value)
+        #expect(ControlSidebarStatusCondition.absent.matches(nil))
+        #expect(!condition.matches(nil))
+        for change in ["none", "value", "unicode", "icon", "color", "url", "priority", "format", "work"] {
+            let entry = ControlSidebarStatusEntrySnapshot(
+                key: "history", value: change == "value" ? "human" : change == "unicode" ? "é\nfoo=bar \"quoted\"" : value,
+                icon: change == "icon" ? "star" : nil,
+                color: change == "color" ? "#123456" : nil,
+                urlAbsoluteString: change == "url" ? "https://example.com" : nil,
+                priority: change == "priority" ? 1 : 0,
+                format: change == "format" ? .markdown : .plain,
+                workState: change == "work" ? .waiting : nil
+            )
+            #expect(!ControlSidebarStatusCondition.absent.matches(entry))
+            #expect(condition.matches(entry) == (change == "none"))
+        }
+    }
+
     @Test func statusPersistenceIsExplicitAndValidatedBeforeMutation() {
         for (option, expected) in [("", false), (" --persist true", true), (" --persist=false", false)] {
             let context = FakeSidebarV1ControlCommandContext()

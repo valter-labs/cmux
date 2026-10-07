@@ -28,13 +28,20 @@ extension TerminalController: ControlSidebarContext {
         panelID: UUID?,
         pid: Int32?,
         workState: ControlSidebarAgentWorkState?,
-        persist: Bool = false
+        persist: Bool = false,
+        condition: ControlSidebarStatusCondition? = nil
     ) {
         let appFormat = SidebarMetadataFormat(rawValue: format.rawValue) ?? .plain
         let appWorkState = workState.flatMap { SidebarAgentWorkState(rawValue: $0.rawValue) }
         controlSidebarSchedulePanelOwnedMutation(target: target, panelID: panelID) { _, owner in
+            let current = owner.statusEntry(key: key, panelId: panelID)
+            // A read before enqueue cannot protect an intervening human edit.
+            // Reject before the unchanged-display path can update PID tracking.
+            if let condition, !condition.matches(current.map(Self.controlSidebarStatusEntrySnapshot)) {
+                return
+            }
             guard Self.shouldReplaceStatusEntry(
-                current: owner.statusEntry(key: key, panelId: panelID),
+                current: current,
                 key: key,
                 value: value,
                 icon: icon,
@@ -72,9 +79,14 @@ extension TerminalController: ControlSidebarContext {
     nonisolated func controlSidebarScheduleStatusClear(
         target: ControlSidebarTabTarget,
         key: String,
-        panelID: UUID?
+        panelID: UUID?,
+        condition: ControlSidebarStatusCondition? = nil
     ) {
         controlSidebarSchedulePanelOwnedMutation(target: target, panelID: panelID) { _, owner in
+            // Status and PID clearing share the same live ownership decision.
+            if let condition, !condition.matches(owner.statusEntry(key: key, panelId: panelID).map(Self.controlSidebarStatusEntrySnapshot)) {
+                return
+            }
             owner.clearStatusEntry(key: key, panelId: panelID)
             owner.clearAgentPID(key: key, panelId: panelID, clearStatus: false)
         }

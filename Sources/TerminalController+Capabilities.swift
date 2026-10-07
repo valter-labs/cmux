@@ -497,6 +497,7 @@ extension TerminalController {
                 "workspace_status_entries": true,
                 "persistent_status_entries": true,
                 "structured_status_entries": true,
+                "conditional_status_entries": true,
             ],
             "methods": methods.sorted()
         ]

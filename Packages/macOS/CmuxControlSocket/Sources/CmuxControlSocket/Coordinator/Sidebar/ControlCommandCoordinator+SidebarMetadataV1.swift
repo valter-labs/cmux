@@ -17,6 +17,36 @@ internal import Foundation
 extension ControlCommandCoordinator {
     // MARK: - Status / metadata entries
 
+    nonisolated func sidebarParseStatusCondition(
+        _ args: String,
+        options: [String: String]
+    ) -> (condition: ControlSidebarStatusCondition?, error: String?) {
+        // The legacy options dictionary keeps only the last repeated option;
+        // conditional writes must reject duplicates rather than weaken a guard.
+        let tokens = sidebarTokenizeArgs(args).filter {
+            $0 == "--if-absent" || $0.hasPrefix("--if-absent=")
+                || $0 == "--if-default-value" || $0.hasPrefix("--if-default-value=")
+        }
+        guard tokens.count <= 1 else {
+            return (nil, "ERROR: Status conditions must be unique and mutually exclusive")
+        }
+        if let raw = options["if-absent"] {
+            guard raw == "true" else {
+                return (nil, "ERROR: Invalid if-absent value — use: --if-absent=true")
+            }
+            return (.absent, nil)
+        }
+        if let value = options["if-default-value"] {
+            // An explicit '=' can observe an empty value. A missing argument
+            // cannot safely mean ownership of an empty entry.
+            guard tokens.first?.hasPrefix("--if-default-value=") == true || !value.isEmpty else {
+                return (nil, "ERROR: Missing if-default-value — use: --if-default-value=<value>")
+            }
+            return (.defaultValue(value), nil)
+        }
+        return (nil, nil)
+    }
+
     /// The shared `set_status`/`report_meta` upsert body: parse + validate on
     /// the calling thread, then a bus enqueue; the `OK` reply is parse-only
     /// (zero main hops, exactly the legacy deferred-mutation semantics).
@@ -30,6 +60,8 @@ extension ControlCommandCoordinator {
 
         let key = parsed.positional[0]
         let value = parsed.positional[1...].joined(separator: " ")
+        let condition = sidebarParseStatusCondition(args, options: parsed.options)
+        if let error = condition.error { return error }
         let persist: Bool
         if let rawPersist = parsed.options["persist"] {
             guard let parsedPersist = Bool(rawPersist.lowercased()) else {
@@ -112,7 +144,8 @@ extension ControlCommandCoordinator {
             panelID: panelResolution.panelId,
             pid: pidValue,
             workState: workState,
-            persist: persist
+            persist: persist,
+            condition: condition.condition
         )
         return "OK"
     }
@@ -129,6 +162,8 @@ extension ControlCommandCoordinator {
             return "ERROR: Missing metadata key — usage: \(usage)"
         }
 
+        let condition = sidebarParseStatusCondition(args, options: parsed.options)
+        if let error = condition.error { return error }
         let targetResolution = sidebarParseMutationTabTarget(options: parsed.options)
         guard let target = targetResolution.target else {
             return targetResolution.error ?? "ERROR: No tab selected"
@@ -144,7 +179,8 @@ extension ControlCommandCoordinator {
         context?.controlSidebarScheduleStatusClear(
             target: target,
             key: key,
-            panelID: panelResolution.panelId
+            panelID: panelResolution.panelId,
+            condition: condition.condition
         )
         return "OK"
     }

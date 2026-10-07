@@ -20,7 +20,8 @@ final class FakeSidebarV1ControlCommandContext: ControlCommandContext {
     nonisolated(unsafe) var statusClearCall: (
         target: ControlSidebarTabTarget,
         key: String,
-        panelID: UUID?
+        panelID: UUID?,
+        condition: ControlSidebarStatusCondition?
     )?
     nonisolated(unsafe) var agentPIDClearCall: (
         target: ControlSidebarTabTarget,
@@ -40,7 +41,8 @@ final class FakeSidebarV1ControlCommandContext: ControlCommandContext {
         icon: String?,
         panelID: UUID?,
         workState: ControlSidebarAgentWorkState?,
-        persist: Bool
+        persist: Bool,
+        condition: ControlSidebarStatusCondition?
     )?
 
     nonisolated func controlSurfaceParseShellActivityState(
@@ -88,17 +90,19 @@ final class FakeSidebarV1ControlCommandContext: ControlCommandContext {
         panelID: UUID?,
         pid: Int32?,
         workState: ControlSidebarAgentWorkState?,
-        persist: Bool
+        persist: Bool,
+        condition: ControlSidebarStatusCondition?
     ) {
-        statusUpsertCall = (target, key, value, icon, panelID, workState, persist)
+        statusUpsertCall = (target, key, value, icon, panelID, workState, persist, condition)
     }
 
     nonisolated func controlSidebarScheduleStatusClear(
         target: ControlSidebarTabTarget,
         key: String,
-        panelID: UUID?
+        panelID: UUID?,
+        condition: ControlSidebarStatusCondition?
     ) {
-        statusClearCall = (target, key, panelID)
+        statusClearCall = (target, key, panelID, condition)
     }
 
     nonisolated func controlSidebarScheduleAgentPIDClear(
