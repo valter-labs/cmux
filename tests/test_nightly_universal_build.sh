@@ -640,7 +640,7 @@ fi
 # never reaches the helper, signing, notarization, dSYM upload, or publication,
 # and cold_cache (skip the compilation cache restore) is only honoured there.
 for expected in \
-  'description: Measure the unsigned universal build only. Never builds the helper, signs, notarizes, uploads dSYMs, or publishes.' \
+  'description: Measure the unsigned app build only. Never builds the helper, signs, notarizes, uploads dSYMs, or publishes.' \
   'description: Skip the Xcode compilation cache restore so the measurement run is a cache miss. Only honoured with build_only.' \
   "const buildOnly = process.env.BUILD_ONLY === 'true';" \
   "const coldCache = buildOnly && process.env.COLD_CACHE === 'true';" \
@@ -674,7 +674,7 @@ if [ "$(job_if build-nightly-app)" != "    if: needs.decide.outputs.should_build
   exit 1
 fi
 
-# A measurement run always builds the production universal workload: it must
+# A measurement defaults to the production universal workload: it must
 # not depend on the nightly tag (a build-only dispatch on main would otherwise
 # skip when the tag already matches HEAD) and must ignore the fast arm64 path.
 # Match the expression, not its declaration keyword, so that rebinding
@@ -684,7 +684,7 @@ for expected in \
   "shouldBuild = !seedOnly && !alreadyPublished && (buildOnly || !isMainRef || forceBuild || nightlySha !== headSha);" \
   "fastBuild = !buildOnly && process.env.FAST_BUILD === 'true';"; do
   if ! grep -Fq "$expected" "$WORKFLOW_FILE"; then
-    echo "FAIL: build_only must always build the universal app: $expected"
+    echo "FAIL: build_only must stay independent of publication and fast dogfood: $expected"
     exit 1
   fi
 done
