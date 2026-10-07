@@ -175,6 +175,23 @@ fi
 grep -q 'no valid build-provenance attestation' "$TEST_DIR/default-denied.log"
 echo "PASS: remote installs verify the publishing workflow's attestation by default"
 
+# A fork consumes the same upstream-published client, so its build must not
+# substitute the fork's workflow identity for the publisher's signature.
+WORKFLOW_SIGNER="$(python3 - "$ROOT_DIR" "$SIGNER" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+workflow = (Path(sys.argv[1]) / ".github/workflows/reload-build.yml").read_text()
+step = workflow.split("- name: Install and validate matching published cmux-tui client (macOS)", 1)[1].split("- name:", 1)[0]
+match = re.search(r'--attest-signer-workflow "([^"]+)"', step)
+print(match.group(1).replace("$GITHUB_REPOSITORY", "example/cmux-fork") if match else sys.argv[2])
+PY
+)"
+install_remote "$TEST_DIR/Fork.app" --expected-commit "$COMMIT" --attest-signer-workflow "$WORKFLOW_SIGNER" > "$TEST_DIR/fork.log" 2>&1
+grep -q "^gh attestation verify .* --repo manaflow-ai/cmux --signer-workflow $SIGNER --source-digest $COMMIT\$" "$EVENTS"
+echo "PASS: fork reload builds verify the upstream publisher's signature"
+
 # Only the explicit local-development opt-out installs without gh, and it says so.
 OPT_OUT_APP="$TEST_DIR/OptOut.app"
 FAKE_GH_EXIT=1 install_remote "$OPT_OUT_APP" --allow-unattested > "$TEST_DIR/opt-out.log" 2>&1
