@@ -27,13 +27,24 @@ extension TerminalController: ControlSidebarContext {
         format: ControlSidebarMetadataFormat,
         panelID: UUID?,
         pid: Int32?,
-        workState: ControlSidebarAgentWorkState?
+        workState: ControlSidebarAgentWorkState?,
+        persist: Bool = false,
+        condition: ControlSidebarStatusCondition? = nil
     ) {
+        // Panel reports also mutate the workspace-wide key, so a panel's stale
+        // copy cannot authorize CAS. Keep this until those scopes mutate independently.
+        guard condition == nil || panelID == nil else { return }
         let appFormat = SidebarMetadataFormat(rawValue: format.rawValue) ?? .plain
         let appWorkState = workState.flatMap { SidebarAgentWorkState(rawValue: $0.rawValue) }
         controlSidebarSchedulePanelOwnedMutation(target: target, panelID: panelID) { _, owner in
+            let current = owner.statusEntry(key: key, panelId: panelID)
+            // A read before enqueue cannot protect an intervening human edit.
+            // Reject before the unchanged-display path can update PID tracking.
+            if let condition, !condition.matches(current.map(Self.controlSidebarStatusEntrySnapshot)) {
+                return
+            }
             guard Self.shouldReplaceStatusEntry(
-                current: owner.statusEntry(key: key, panelId: panelID),
+                current: current,
                 key: key,
                 value: value,
                 icon: icon,
@@ -41,7 +52,8 @@ extension TerminalController: ControlSidebarContext {
                 url: url,
                 priority: priority,
                 format: appFormat,
-                workState: appWorkState
+                workState: appWorkState,
+                persist: persist
             ) else {
                 // Still update PID tracking even if the status display hasn't changed.
                 if let pid {
@@ -58,7 +70,8 @@ extension TerminalController: ControlSidebarContext {
                 priority: priority,
                 format: appFormat,
                 timestamp: Date(),
-                workState: appWorkState
+                workState: appWorkState,
+                persist: persist
             ), key: key, panelId: panelID)
             if let pid {
                 owner.recordAgentPID(key: key, pid: pid, panelId: panelID)
@@ -69,9 +82,17 @@ extension TerminalController: ControlSidebarContext {
     nonisolated func controlSidebarScheduleStatusClear(
         target: ControlSidebarTabTarget,
         key: String,
-        panelID: UUID?
+        panelID: UUID?,
+        condition: ControlSidebarStatusCondition? = nil
     ) {
+        // Panel reports also mutate the workspace-wide key, so a panel's stale
+        // copy cannot authorize CAS. Keep this until those scopes mutate independently.
+        guard condition == nil || panelID == nil else { return }
         controlSidebarSchedulePanelOwnedMutation(target: target, panelID: panelID) { _, owner in
+            // Status and PID clearing share the same live ownership decision.
+            if let condition, !condition.matches(owner.statusEntry(key: key, panelId: panelID).map(Self.controlSidebarStatusEntrySnapshot)) {
+                return
+            }
             owner.clearStatusEntry(key: key, panelId: panelID)
             owner.clearAgentPID(key: key, panelId: panelID, clearStatus: false)
         }

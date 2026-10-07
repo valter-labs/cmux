@@ -8195,9 +8195,13 @@ struct CMUXCLI {
             )
             print(response)
         case "list-status":
+            var statusArgs = commandArgs
+            if jsonOutput {
+                statusArgs.insert("--json=true", at: statusArgs.firstIndex(of: "--") ?? statusArgs.count)
+            }
             let response = try forwardSidebarMetadataCommand(
                 "list_status",
-                commandArgs: commandArgs,
+                commandArgs: statusArgs,
                 client: client,
                 windowOverride: windowId
             )
@@ -21343,6 +21347,7 @@ struct CMUXCLI {
               --color <#hex>         Pill color (e.g. "#ff9500")
                                      "#4C8DFF" draws as the cmux accent (app.accentColor)
               --priority <n>         Sort priority; higher appears first (default: 0)
+              --persist <true|false> Restore this entry after restart (default: false)
               --workspace <id|ref|index>   Target workspace (default: $CMUX_WORKSPACE_ID)
               --window <id|ref|index>      Window context for workspace refs and indexes
 

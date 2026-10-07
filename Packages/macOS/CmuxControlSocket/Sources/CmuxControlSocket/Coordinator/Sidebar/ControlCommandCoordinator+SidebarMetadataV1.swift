@@ -17,6 +17,36 @@ internal import Foundation
 extension ControlCommandCoordinator {
     // MARK: - Status / metadata entries
 
+    nonisolated func sidebarParseStatusCondition(
+        _ args: String,
+        options: [String: String]
+    ) -> (condition: ControlSidebarStatusCondition?, error: String?) {
+        // The legacy options dictionary keeps only the last repeated option;
+        // conditional writes must reject duplicates rather than weaken a guard.
+        let tokens = sidebarTokenizeArgs(args).filter {
+            $0 == "--if-absent" || $0.hasPrefix("--if-absent=")
+                || $0 == "--if-default-value" || $0.hasPrefix("--if-default-value=")
+        }
+        guard tokens.count <= 1 else {
+            return (nil, "ERROR: Status conditions must be unique and mutually exclusive")
+        }
+        if let raw = options["if-absent"] {
+            guard raw == "true" else {
+                return (nil, "ERROR: Invalid if-absent value — use: --if-absent=true")
+            }
+            return (.absent, nil)
+        }
+        if let value = options["if-default-value"] {
+            // An explicit '=' can observe an empty value. A missing argument
+            // cannot safely mean ownership of an empty entry.
+            guard tokens.first?.hasPrefix("--if-default-value=") == true || !value.isEmpty else {
+                return (nil, "ERROR: Missing if-default-value — use: --if-default-value=<value>")
+            }
+            return (.defaultValue(value), nil)
+        }
+        return (nil, nil)
+    }
+
     /// The shared `set_status`/`report_meta` upsert body: parse + validate on
     /// the calling thread, then a bus enqueue; the `OK` reply is parse-only
     /// (zero main hops, exactly the legacy deferred-mutation semantics).
@@ -30,6 +60,18 @@ extension ControlCommandCoordinator {
 
         let key = parsed.positional[0]
         let value = parsed.positional[1...].joined(separator: " ")
+        let condition = sidebarParseStatusCondition(args, options: parsed.options)
+        if let error = condition.error { return error }
+        let persist: Bool
+        if let rawPersist = parsed.options["persist"] {
+            guard let parsedPersist = Bool(rawPersist.lowercased()) else {
+                return "ERROR: Invalid persist value '\(rawPersist)' — use: true, false"
+            }
+            persist = parsedPersist
+        } else {
+            persist = false
+        }
+
         let icon = sidebarNormalizedOptionValue(parsed.options["icon"])
         let color = sidebarNormalizedOptionValue(parsed.options["color"])
 
@@ -76,10 +118,13 @@ extension ControlCommandCoordinator {
         }
         let panelResolution = sidebarParseOptionalPanelIdOption(
             options: parsed.options,
-            usage: "set_status <key> <value> [--icon=X] [--color=#hex] [--url=X] [--priority=N] [--format=plain|markdown] [--work=running|subagents|waiting] [--tab=X] [--panel=ID]"
+            usage: "set_status <key> <value> [--icon=X] [--color=#hex] [--url=X] [--priority=N] [--format=plain|markdown] [--work=running|subagents|waiting] [--persist=true|false] [--tab=X] [--panel=ID]"
         )
         if let error = panelResolution.error {
             return error
+        }
+        if condition.condition != nil && panelResolution.panelId != nil {
+            return "ERROR: Conditional status mutations do not support --panel"
         }
 
         let pidValue: Int32? = {
@@ -101,7 +146,9 @@ extension ControlCommandCoordinator {
             format: format,
             panelID: panelResolution.panelId,
             pid: pidValue,
-            workState: workState
+            workState: workState,
+            persist: persist,
+            condition: condition.condition
         )
         return "OK"
     }
@@ -118,6 +165,8 @@ extension ControlCommandCoordinator {
             return "ERROR: Missing metadata key — usage: \(usage)"
         }
 
+        let condition = sidebarParseStatusCondition(args, options: parsed.options)
+        if let error = condition.error { return error }
         let targetResolution = sidebarParseMutationTabTarget(options: parsed.options)
         guard let target = targetResolution.target else {
             return targetResolution.error ?? "ERROR: No tab selected"
@@ -129,11 +178,15 @@ extension ControlCommandCoordinator {
         if let error = panelResolution.error {
             return error
         }
+        if condition.condition != nil && panelResolution.panelId != nil {
+            return "ERROR: Conditional status mutations do not support --panel"
+        }
 
         context?.controlSidebarScheduleStatusClear(
             target: target,
             key: key,
-            panelID: panelResolution.panelId
+            panelID: panelResolution.panelId,
+            condition: condition.condition
         )
         return "OK"
     }
@@ -142,7 +195,7 @@ extension ControlCommandCoordinator {
     nonisolated func sidebarSetStatus(_ args: String, context: (any ControlCommandContext)?) -> String {
         sidebarUpsertMetadata(
             args,
-            missingError: "ERROR: Missing status key or value — usage: set_status <key> <value> [--icon=X] [--color=#hex] [--url=X] [--priority=N] [--format=plain|markdown] [--work=running|subagents|waiting] [--tab=X]",
+            missingError: "ERROR: Missing status key or value — usage: set_status <key> <value> [--icon=X] [--color=#hex] [--url=X] [--priority=N] [--format=plain|markdown] [--work=running|subagents|waiting] [--persist=true|false] [--tab=X]",
             context: context
         )
     }
@@ -167,18 +220,35 @@ extension ControlCommandCoordinator {
     }
 
     /// The shared `list_status`/`list_meta` body: one main hop returns the
-    /// Sendable snapshots; line formatting runs on the calling thread.
+    /// Sendable snapshots; text or opt-in JSON formatting runs on the calling thread.
     nonisolated func sidebarListMetadata(
         _ args: String,
         emptyMessage: String,
         context: (any ControlCommandContext)?
     ) -> String {
-        let tabArg = sidebarParseOptions(args).options["tab"]
+        let options = sidebarParseOptions(args).options
+        let tabArg = options["tab"]
         let snapshot = context.map { seam in
             seam.controlSidebarOnMain { $0.controlSidebarStatusEntries(tabArg: tabArg) }
         } ?? nil
         guard let entries = snapshot else {
             return "ERROR: Tab not found"
+        }
+        if options["json"] == "true" {
+            // Native snapshots originate from the workspace's keyed status dictionary.
+            let values = Dictionary(uniqueKeysWithValues: entries.map { ($0.key, JSONValue.string($0.value)) })
+            var metadata: [String: JSONValue] = [:]
+            for entry in entries {
+                var attributes: [String: JSONValue] = [:]
+                if let icon = entry.icon { attributes["icon"] = .string(icon) }
+                if let color = entry.color { attributes["color"] = .string(color) }
+                if let url = entry.urlAbsoluteString { attributes["url"] = .string(url) }
+                if entry.priority != 0 { attributes["priority"] = .int(Int64(entry.priority)) }
+                if entry.format != .plain { attributes["format"] = .string(entry.format.rawValue) }
+                if let work = entry.workState { attributes["work"] = .string(work.rawValue) }
+                if !attributes.isEmpty { metadata[entry.key] = .object(attributes) }
+            }
+            return ControlResponseEncoder().encode(.object(["entries": .object(values), "metadata": .object(metadata)]))
         }
         if entries.isEmpty {
             return emptyMessage

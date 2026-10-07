@@ -330,7 +330,7 @@ with:
 
 - `workspaces` — array, one per workspace. Always present: `id`, `title`,
   `selected` (Bool), `pinned` (Bool), `index` (Int), `directory`, `ports`
-  (array of Int) + `portCount`, `unread` (Int notifications), `status`, `tabs` +
+  (array of Int) + `portCount`, `unread` (Int notifications), `status`, `statusEntries`, `tabs` +
   `tabCount`. `status` is the workspace's task-status lane, one of `todo`,
   `working`, `needs-attention`, `review` or `done`. It is the resolved lane:
   a manual pin set through `cmux workspace status set` or the sidebar menu
@@ -338,6 +338,58 @@ with:
   (an agent waiting on input, a running agent, an open pull request, a dirty
   working tree). An external tool that pins the lane through
   `cmux workspace status set` shows up here too.
+
+  `statusEntries` is an object mapping each workspace status key to its text
+  value, for example `{ "deploy": "Ready" }`. It is `{}` when empty and
+  preserves all keys and values, including empty strings. Entry publication
+  timestamps, icons, and colors are not exposed. The meaning of a status text
+  belongs to the tool that publishes it; its publication time does not establish
+  when the underlying activity happened.
+
+  `cmux set-status <key> <value> --persist true` explicitly keeps that entry
+  across workspace restoration, including its key, value, icon, color, URL,
+  priority, format, help text and original publication timestamp. The default is
+  `false`: existing runtime status reporters remain transient because their
+  processes may no longer exist. Restored URLs must use HTTP or HTTPS; other
+  schemes are discarded. An unknown saved format falls back to plain text.
+
+  URL, priority, format and help text are optional snapshot fields. Older
+  snapshots default to no URL or help text, priority `0` and plain-text format.
+  Restored priority remains bounded to `-9999...9999`. `workState` and agent
+  PIDs are live evidence: they are never serialized or restored by persistence.
+  The custom-sidebar context still projects only key/value text, not the entry's
+  presentation metadata or publication timestamp.
+  Tools can check `cmux capabilities` for
+  `custom_sidebar.workspace_status_entries` and
+  `custom_sidebar.persistent_status_entries` before publishing durable data.
+
+  `cmux list-status --json` returns `{ "entries": {}, "metadata": {} }` when
+  empty. `entries` maps keys to exact text values, including newlines and empty
+  strings. `metadata` maps keys to present non-default presentation attributes:
+  `icon`, `color`, `url`, nonzero `priority`, non-plain `format` and live `work`.
+  It does not expose help text or publication timestamps. Tools that compare or
+  remove owned entries should require
+  `custom_sidebar.structured_status_entries` and use this structured readback;
+  the human text listing cannot unambiguously represent multiline values. Check
+  presentation attributes as well as text so an unchanged value with a manually
+  added icon, link, color or format does not lose the user's edit.
+
+  For an owned entry, require `custom_sidebar.conditional_status_entries` before
+  changing it based on readback. `set-status --if-absent=true` creates only when
+  the key is absent; `set-status` or `clear-status` with
+  `--if-default-value=<observed-value>` changes only that exact default-styled
+  value. Default style means no icon, color, URL or live work state, priority `0`
+  and plain format; persistence, help text and timestamp are not condition inputs.
+  An explicitly empty observed value is valid. Conditions are checked on the main
+  queue immediately before mutation, including before any agent PID update, so an
+  intervening human edit is preserved.
+  The flags are mutually exclusive. Conditional mutations are workspace-scoped:
+  `--panel` or its `--surface` alias with either condition is rejected before
+  enqueueing. Invalid conditions
+  fail before enqueueing.
+  An omitted condition retains the existing unconditional public CLI behavior.
+  An enqueue acknowledgment does not prove the condition passed; confirm the
+  intended result with structured readback.
 
   `status` is always reported, independently of whether the built-in status
   glyph is visible. That glyph needs two further conditions the context does

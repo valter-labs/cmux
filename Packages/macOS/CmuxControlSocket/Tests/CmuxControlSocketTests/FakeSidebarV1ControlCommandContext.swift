@@ -3,6 +3,12 @@ import Foundation
 
 @MainActor
 final class FakeSidebarV1ControlCommandContext: ControlCommandContext {
+    var statusEntries: [ControlSidebarStatusEntrySnapshot]?
+
+    func controlSidebarStatusEntries(tabArg: String?) -> [ControlSidebarStatusEntrySnapshot]? {
+        statusEntries
+    }
+
     var workspaceLoadingResult: ControlSidebarWorkspaceLoadingState?
     var workspaceLoadingCall: (tabArg: String?, key: String, on: Bool)?
     // Test-only synchronous seam: calls and reads are serial within each test.
@@ -14,7 +20,8 @@ final class FakeSidebarV1ControlCommandContext: ControlCommandContext {
     nonisolated(unsafe) var statusClearCall: (
         target: ControlSidebarTabTarget,
         key: String,
-        panelID: UUID?
+        panelID: UUID?,
+        condition: ControlSidebarStatusCondition?
     )?
     nonisolated(unsafe) var agentPIDClearCall: (
         target: ControlSidebarTabTarget,
@@ -33,7 +40,9 @@ final class FakeSidebarV1ControlCommandContext: ControlCommandContext {
         value: String,
         icon: String?,
         panelID: UUID?,
-        workState: ControlSidebarAgentWorkState?
+        workState: ControlSidebarAgentWorkState?,
+        persist: Bool,
+        condition: ControlSidebarStatusCondition?
     )?
 
     nonisolated func controlSurfaceParseShellActivityState(
@@ -80,17 +89,20 @@ final class FakeSidebarV1ControlCommandContext: ControlCommandContext {
         format: ControlSidebarMetadataFormat,
         panelID: UUID?,
         pid: Int32?,
-        workState: ControlSidebarAgentWorkState?
+        workState: ControlSidebarAgentWorkState?,
+        persist: Bool,
+        condition: ControlSidebarStatusCondition?
     ) {
-        statusUpsertCall = (target, key, value, icon, panelID, workState)
+        statusUpsertCall = (target, key, value, icon, panelID, workState, persist, condition)
     }
 
     nonisolated func controlSidebarScheduleStatusClear(
         target: ControlSidebarTabTarget,
         key: String,
-        panelID: UUID?
+        panelID: UUID?,
+        condition: ControlSidebarStatusCondition?
     ) {
-        statusClearCall = (target, key, panelID)
+        statusClearCall = (target, key, panelID, condition)
     }
 
     nonisolated func controlSidebarScheduleAgentPIDClear(

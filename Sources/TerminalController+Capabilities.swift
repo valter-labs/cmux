@@ -493,6 +493,12 @@ extension TerminalController {
             "socket_path": socketServer.currentSocketPath,
             "access_mode": socketServer.accessMode.rawValue,
             "capabilities": MobileHostService.mobileHostCapabilities,
+            "custom_sidebar": [
+                "workspace_status_entries": true,
+                "persistent_status_entries": true,
+                "structured_status_entries": true,
+                "conditional_status_entries": true,
+            ],
             "methods": methods.sorted()
         ]
     }

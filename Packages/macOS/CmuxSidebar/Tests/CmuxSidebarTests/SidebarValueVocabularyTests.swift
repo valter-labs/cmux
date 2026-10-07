@@ -3,6 +3,17 @@ import Testing
 @testable import CmuxSidebar
 
 @Suite struct SidebarWireValueTests {
+    @Test func statusPersistenceIsOptInAndParticipatesInEquality() {
+        let publication = Date(timeIntervalSince1970: 0)
+        let transient = SidebarStatusEntry(key: "history", value: "Same text", timestamp: publication)
+        let persistent = SidebarStatusEntry(key: "history", value: "Same text", timestamp: publication, persist: true)
+
+        #expect(transient.persist == false)
+        #expect(persistent.persist == true)
+        #expect(transient != persistent)
+        #expect(persistent.workState == nil)
+    }
+
     /// Raw values arrive over the control socket; round-trips are frozen.
     @Test func metadataFormatRawValuesRoundTrip() {
         #expect(SidebarMetadataFormat(rawValue: "plain") == .plain)

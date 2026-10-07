@@ -29,7 +29,8 @@ struct CustomSidebarDataContextBuilderTests {
         id: UUID = UUID(),
         index: Int = 0,
         surfaces: [CustomSidebarSurfaceSnapshot] = [],
-        taskStatus: String = "todo"
+        taskStatus: String = "todo",
+        statusEntries: [String: String] = [:]
     ) -> CustomSidebarWorkspaceSnapshot {
         CustomSidebarWorkspaceSnapshot(
             id: id,
@@ -52,7 +53,8 @@ struct CustomSidebarDataContextBuilderTests {
             latestSubmittedMessage: nil,
             latestSubmittedAt: nil,
             remote: nil,
-            taskStatus: taskStatus
+            taskStatus: taskStatus,
+            statusEntries: statusEntries
         )
     }
 
@@ -93,6 +95,60 @@ struct CustomSidebarDataContextBuilderTests {
 
         #expect(context["selectedId"] == .string(""))
         #expect(context["workspaceCount"] == .int(0))
+    }
+
+    @Test("Workspace status entries are always an object, including when empty")
+    func workspaceStatusEntriesAlwaysPresent() {
+        let builder = CustomSidebarDataContextBuilder()
+        let value = builder.workspaceValue(minimalWorkspace())
+
+        #expect(value.member("statusEntries") == .object([:]))
+    }
+
+    @Test("Status entries preserve every key and string without adding metadata")
+    func workspaceStatusEntryValues() {
+        let builder = CustomSidebarDataContextBuilder()
+        let entries = [
+            "cmux-safe-ops.last-turn.v1": "Última conversa: 2026-10-07T09:00:00Z",
+            "deploy": "Ready\nfor review",
+            "empty": "",
+            "punctuation.key": "{\"value\":\"verbatim\"}",
+        ]
+        let workspace = minimalWorkspace(statusEntries: entries)
+        let value = builder.workspaceValue(workspace)
+
+        #expect(workspace.statusEntries == entries)
+        #expect(value.member("statusEntries") == .object(entries.mapValues { .string($0) }))
+        #expect(value.member("status") == .string("todo"))
+        #expect(value.member("title") == .string("Workspace"))
+    }
+
+    @Test("New context snapshots update status texts without changing other entries")
+    func workspaceStatusEntryUpdates() {
+        let builder = CustomSidebarDataContextBuilder()
+        let id = UUID()
+        let key = "cmux-safe-ops.last-turn.v1"
+        let original = [key: "Última conversa: 2026-10-06T09:00:00Z", "deploy": "Ready"]
+        let updated = [key: "Última conversa: 2026-10-07T09:00:00Z", "deploy": "Ready"]
+        let snapshots = [original, updated, ["deploy": "Ready"]].map { entries in
+            CustomSidebarContextSnapshot(
+                workspaces: [minimalWorkspace(id: id, statusEntries: entries)],
+                selectedWorkspaceId: id,
+                selectedWorkspaceTitle: "Workspace",
+                totalUnreadCount: 0,
+                now: Date(timeIntervalSince1970: 0)
+            )
+        }
+        let contexts = snapshots.map { builder.dataContext(for: $0) }
+
+        #expect(snapshots[0] != snapshots[1])
+        for (index, expected) in [original, updated, ["deploy": "Ready"]].enumerated() {
+            let workspace = contexts[index]["workspaces"]?.iterationValues?.first
+            #expect(workspace?.member("statusEntries") == .object(expected.mapValues { .string($0) }))
+            #expect(workspace?.member("id") == .string(id.uuidString))
+            #expect(contexts[index]["selectedId"] == .string(id.uuidString))
+        }
+        #expect(snapshots[0].workspaces[0].statusEntries == original)
     }
 
     @Test("Clock components derive from the injected calendar")

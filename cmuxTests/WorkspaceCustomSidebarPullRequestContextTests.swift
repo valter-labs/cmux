@@ -1,4 +1,5 @@
 import XCTest
+import CmuxSidebar
 import CmuxWorkspaces
 import CmuxSwiftRender
 
@@ -9,6 +10,172 @@ import CmuxSwiftRender
 #endif
 
 final class WorkspaceCustomSidebarPullRequestContextTests: XCTestCase {
+    @MainActor
+    func testAutosaveTracksPersistentStatusChangesWithoutChangingEntryCount() throws {
+        let manager = TabManager()
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        let key = "history"
+        let publication = Date(timeIntervalSince1970: 0)
+        workspace.statusEntries[key] = SidebarStatusEntry(key: key, value: "Earlier", timestamp: publication)
+        let transientFingerprint = manager.sessionAutosaveFingerprint()
+
+        workspace.statusEntries[key] = SidebarStatusEntry(key: key, value: "Earlier", timestamp: publication, persist: true)
+        let persistentFingerprint = manager.sessionAutosaveFingerprint()
+        XCTAssertNotEqual(transientFingerprint, persistentFingerprint)
+
+        workspace.statusEntries[key] = SidebarStatusEntry(key: key, value: "Later", timestamp: publication, persist: true)
+        let updatedFingerprint = manager.sessionAutosaveFingerprint()
+        XCTAssertNotEqual(persistentFingerprint, updatedFingerprint)
+
+        workspace.statusEntries[key] = SidebarStatusEntry(key: key, value: "Later", timestamp: publication)
+        XCTAssertNotEqual(updatedFingerprint, manager.sessionAutosaveFingerprint())
+    }
+
+    @MainActor
+    func testPersistentStatusRestoresPresentationWithoutRuntimeState() throws {
+        let workspace = Workspace()
+        let key = "review"
+        let url = try XCTUnwrap(URL(string: "https://example.com/review"))
+        workspace.statusEntries[key] = SidebarStatusEntry(
+            key: key, value: "**Ready**", url: url, priority: 80,
+            format: .markdown, helpText: "Review details", workState: .running, persist: true
+        )
+        let encoded = try JSONEncoder().encode(workspace.sessionSnapshot(includeScrollback: false))
+        let snapshot = try JSONDecoder().decode(SessionWorkspaceSnapshot.self, from: encoded)
+        let restored = Workspace()
+        restored.restoreSessionSnapshot(snapshot)
+        let entry = try XCTUnwrap(restored.statusEntries[key])
+        XCTAssertEqual(entry.url, url)
+        XCTAssertEqual(entry.priority, 80)
+        XCTAssertEqual(entry.format, .markdown)
+        XCTAssertEqual(entry.helpText, "Review details")
+        XCTAssertNil(entry.workState)
+    }
+
+    @MainActor
+    func testAutosaveTracksPersistentStatusPresentation() throws {
+        let manager = TabManager()
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        let key = "review"
+        let time = Date(timeIntervalSince1970: 0)
+        let entries = [
+            SidebarStatusEntry(key: key, value: "Ready", timestamp: time, persist: true),
+            SidebarStatusEntry(key: key, value: "Ready", url: URL(string: "https://example.com"), timestamp: time, persist: true),
+            SidebarStatusEntry(key: key, value: "Ready", priority: 80, timestamp: time, persist: true),
+            SidebarStatusEntry(key: key, value: "Ready", format: .markdown, timestamp: time, persist: true),
+            SidebarStatusEntry(key: key, value: "Ready", timestamp: time, helpText: "Details", persist: true)
+        ]
+        var fingerprints = Set<Int>()
+        for entry in entries {
+            workspace.statusEntries[key] = entry
+            fingerprints.insert(manager.sessionAutosaveFingerprint())
+        }
+        XCTAssertEqual(fingerprints.count, entries.count)
+    }
+
+    func testCapabilitiesAdvertiseCustomSidebarStatusSupport() throws {
+        let capabilities = TerminalController.shared.v2CapabilitiesWithBrowserDesignMode(params: [:])
+        let customSidebar = try XCTUnwrap(capabilities["custom_sidebar"] as? [String: Bool])
+        XCTAssertEqual(customSidebar["workspace_status_entries"], true)
+        XCTAssertEqual(customSidebar["persistent_status_entries"], true)
+    }
+
+    @MainActor
+    func testSessionRestoreKeepsOnlyExplicitlyPersistentStatusEntries() throws {
+        let workspace = Workspace()
+        let key = "historical-data"
+        let value = "Última conversa: 2026-10-07T09:00:00Z"
+        workspace.statusEntries[key] = SidebarStatusEntry(key: key, value: value)
+        workspace.statusEntries["claude_code"] = SidebarStatusEntry(key: "claude_code", value: "Running")
+        workspace.statusEntries["transient"] = SidebarStatusEntry(key: "transient", value: "Unpersisted")
+        let snapshot = workspace.sessionSnapshot(includeScrollback: false)
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(snapshot)) as? [String: Any])
+        var entries = try XCTUnwrap(json["statusEntries"] as? [[String: Any]])
+        let historicalIndex = try XCTUnwrap(entries.firstIndex { $0["key"] as? String == key })
+        entries[historicalIndex]["persist"] = true
+        let transientIndex = try XCTUnwrap(entries.firstIndex { $0["key"] as? String == "transient" })
+        entries[transientIndex]["persist"] = false
+        json["statusEntries"] = entries
+        let decoded = try JSONDecoder().decode(SessionWorkspaceSnapshot.self, from: JSONSerialization.data(withJSONObject: json))
+        let restored = Workspace()
+        restored.restoreSessionSnapshot(decoded)
+
+        XCTAssertEqual(restored.statusEntries[key]?.value, value)
+        XCTAssertNil(restored.statusEntries["claude_code"])
+        XCTAssertNil(restored.statusEntries["transient"])
+        XCTAssertNil(restored.statusEntries[key]?.workState)
+        XCTAssertEqual(
+            restored.customSidebarWorkspaceSnapshot(index: 0, selectedId: nil, unreadCount: 0).statusEntries,
+            [key: value]
+        )
+    }
+
+    @MainActor
+    func testCustomSidebarStatusTextsProjectAndSurviveSessionEncoding() throws {
+        let workspace = Workspace()
+        let key = "cmux-safe-ops.last-turn.v1"
+        let value = "Última conversa: 2026-10-07T09:00:00Z"
+        let publicationTime = Date(timeIntervalSince1970: 1_800_000_000)
+        workspace.statusEntries[key] = SidebarStatusEntry(
+            key: key,
+            value: value,
+            icon: "clock",
+            color: "#123456",
+            timestamp: publicationTime,
+            persist: true
+        )
+        workspace.statusEntries["deploy"] = SidebarStatusEntry(key: "deploy", value: "Ready")
+        let expected = [key: value, "deploy": "Ready"]
+        let builder = CustomSidebarDataContextBuilder()
+        let projected = workspace.customSidebarWorkspaceSnapshot(index: 0, selectedId: workspace.id, unreadCount: 0)
+
+        XCTAssertEqual(projected.statusEntries, expected)
+        XCTAssertEqual(
+            builder.workspaceValue(projected).member("statusEntries"),
+            .object(expected.mapValues { .string($0) })
+        )
+
+        let snapshot = workspace.sessionSnapshot(includeScrollback: false)
+        let decoded = try JSONDecoder().decode(SessionWorkspaceSnapshot.self, from: JSONEncoder().encode(snapshot))
+        let encodedEntry = try XCTUnwrap(decoded.statusEntries.first { $0.key == key })
+        XCTAssertEqual(encodedEntry.value, value)
+        XCTAssertEqual(encodedEntry.timestamp, publicationTime.timeIntervalSince1970)
+        XCTAssertEqual(encodedEntry.persist, true)
+
+        let restored = Workspace()
+        restored.restoreSessionSnapshot(decoded)
+        XCTAssertEqual(restored.statusEntries[key]?.value, value)
+        XCTAssertEqual(restored.statusEntries[key]?.persist, true)
+        XCTAssertNil(restored.statusEntries["deploy"])
+        XCTAssertNil(restored.statusEntries[key]?.workState)
+        XCTAssertEqual(
+            restored.customSidebarWorkspaceSnapshot(index: 0, selectedId: nil, unreadCount: 0).statusEntries,
+            [key: value]
+        )
+
+        workspace.statusEntries[key] = SidebarStatusEntry(key: key, value: "Última conversa: 2026-10-07T10:00:00Z")
+        let updated = workspace.customSidebarWorkspaceSnapshot(index: 0, selectedId: workspace.id, unreadCount: 0)
+        XCTAssertEqual(updated.statusEntries[key], "Última conversa: 2026-10-07T10:00:00Z")
+        XCTAssertEqual(updated.statusEntries["deploy"], "Ready")
+        XCTAssertEqual(projected.statusEntries, expected)
+    }
+
+    func testStatusPersistenceChangeReplacesUnchangedText() {
+        let entry = SidebarStatusEntry(key: "history", value: "Same text")
+        XCTAssertTrue(TerminalController.shouldReplaceStatusEntry(
+            current: entry,
+            key: entry.key,
+            value: entry.value,
+            icon: nil,
+            color: nil,
+            url: nil,
+            priority: 0,
+            format: .plain,
+            workState: nil,
+            persist: true
+        ))
+    }
+
     @MainActor
     func testCustomSidebarSurfacePersistsAndRestoresAsPane() throws {
         let sidebarName = "__cmux_restore_sidebar_\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))"

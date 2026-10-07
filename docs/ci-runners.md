@@ -136,8 +136,13 @@ the same cost profile or the same urgency.
   `macos-26`; fork pull requests keep those shards on the Blacksmith 15
   fallback. Other PR jobs still use `MACOS_RUNNER_PR`; unset means the
   Blacksmith fallback. PR runs are cancelled on supersession by design, so
-  they are the wrong place to spend elastic paid capacity. A fork uses the
-  GitHub-hosted branch described below instead.
+  they are the wrong place to spend elastic paid capacity.
+- **Workflow runs in repositories outside `manaflow-ai`** use GitHub-hosted
+  `macos-26` for compile admission and its app-host and CLI product consumers,
+  keeping the compile's selected Xcode. The consumers' requested-runner guard
+  checks that same hosted route. This avoids queues for unavailable external
+  Blacksmith capacity; it changes no test selection or verification gate. Fork
+  pull requests running in `manaflow-ai/cmux` retain the upstream routing above.
 - **Test-only lanes** (`test-e2e.yml`, `test-macos-suite.yml`, `test-ios.yml`
   on `auto`, the `iroh-v2.yml` client) resolve through
   `MACOS_RUNNER_TESTS` first, and deliberately do **not** follow `MACOS_RUNNER_15`.
@@ -854,6 +859,25 @@ and the retired self-hosted fleet failed `codesign` with
 | `nightly.yml` `refresh-compilation-cache`, `refresh-test-compilation-cache`, `seed-derived-data` Blacksmith pools | Blacksmith | they seed Blacksmith's own lanes: the release cache the nightly fallback restores, and the pull request admission seeds for each Blacksmith pool |
 | `build-ghosttykit`, `cmux-tui-build-package` (artifacts, nightly, release), `relay-publish-npm` | Blacksmith | publish with R2 or release secrets |
 | `ios-streamed-validate`, `iroh-release-gate` simulator E2E | Blacksmith | secrets in the job, fixed ports, GUI session changes |
+
+## Unsigned nightly build-only validation
+
+For a manual [nightly workflow](../.github/workflows/nightly.yml) dispatch, set
+`build_only=true` to compile an unsigned Release artifact without the helper,
+signing, notarization, dSYM uploads or publication. `build_only_archs` defaults to
+`universal`; choose `arm64` when validating only Apple Silicon. This input is
+honored only in build-only mode, which keeps `fast` false. Publishing runs retain
+their existing architecture selection.
+
+The app-build job allows 150 minutes only for build-only dispatches in
+`valter-labs/cmux`. Upstream, other repositories and publishing builds retain the
+90-minute budget.
+
+Record the source, run and chosen architecture with the artifact. An arm64 pass
+does not establish universal coverage. Use the CLI from that same artifact for
+runtime checks; signing, installation and execution are separate evidence. Follow
+the [tagged-build rules](../skills/cmux-dev-workflow/references/tagged-builds.md)
+before launch, and never replace or stop the user's running stable cmux.
 
 ## Retired: Tart VM fleet
 

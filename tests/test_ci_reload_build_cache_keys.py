@@ -24,6 +24,9 @@ import os
 import re
 import subprocess
 import tempfile
+import signal
+import shlex
+import threading
 from pathlib import Path
 
 import yaml
@@ -242,12 +245,104 @@ def test_off_default_dispatch_warns_that_its_save_is_private() -> None:
         assert "::notice::" not in shared["_stdout"], shared["_stdout"]
 
 
+
+def test_quiet_build_progress_logs_and_heartbeat_cleanup() -> None:
+    script = step_named("Build tagged macOS app")["run"]
+    for status in (0, 17, 143):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            repo = root / "repo"
+            (repo / "scripts").mkdir(parents=True)
+            runner_temp = root / "runner"
+            runner_temp.mkdir()
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            # Shorten only the heartbeat wait; the quiet builder keeps its real
+            # delay so progress must be observed before completion.
+            sleep = bin_dir / "sleep"
+            sleep.write_text("#!/bin/sh\nexec /bin/sleep 0.05\n")
+            sleep.chmod(0o755)
+            ditto = bin_dir / "ditto"
+            ditto.write_text('#!/bin/bash\ntouch "${@: -1}"\n')
+            ditto.chmod(0o755)
+            inner_log = root / "compiler.log"
+            finished = root / "finished"
+            app = repo / "Fixture.app"
+            app.mkdir()
+            reload = repo / "scripts" / "reload.sh"
+            reload.write_text(
+                "#!/bin/bash\n"
+                f"printf 'CompileSwift fixture-progress\\n' > {shlex.quote(str(inner_log))}\n"
+                f"printf '%s\\n' {shlex.quote(f'==> reload starting (tag: fixture, log: {inner_log})')}\n"
+                f"/bin/sleep {20 if status == 143 else 1.5}\n"
+                f"touch {shlex.quote(str(finished))}\n"
+                f"printf 'App path:\\n  %s\\n' {shlex.quote(str(app))}\n"
+                f"exit {status}\n"
+            )
+            reload.chmod(0o755)
+            output = root / "output"
+            output.touch()
+            env = {
+                **os.environ,
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+                "BUILD_TAG": "fixture", "RUNNER_TEMP": str(runner_temp),
+                "GITHUB_WORKSPACE": str(repo), "GITHUB_OUTPUT": str(output),
+                "CMUX_SOURCE_PACKAGES_DIR": str(repo / "packages"),
+                "SPM_CACHE_STATUS": "miss", "DERIVED_DATA_CACHE_STATUS": "miss",
+            }
+            process = subprocess.Popen(
+                ["bash", "-c", script], cwd=repo, env=env,
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+            lines = []
+            progress = threading.Event()
+
+            def read_output() -> None:
+                assert process.stdout is not None
+                for line in process.stdout:
+                    lines.append(line)
+                    if "CompileSwift fixture-progress" in line and not finished.exists():
+                        progress.set()
+
+            reader = threading.Thread(target=read_output, daemon=True)
+            reader.start()
+            try:
+                if status == 143:
+                    assert progress.wait(timeout=8), "compiler progress never appeared"
+                    os.killpg(process.pid, signal.SIGTERM)
+                process.wait(timeout=30)
+                reader.join(timeout=2)
+                assert not reader.is_alive(), "heartbeat retained the build output pipe"
+                assert process.returncode == status, "".join(lines)
+                assert progress.is_set(), "quiet compiler progress was invisible during build:\n" + "".join(lines)
+                subprocess.run(
+                    ["bash", "-e", "-c", step_named("Preserve macOS build logs")["run"]],
+                    cwd=repo, env=env, check=True, capture_output=True, text=True,
+                )
+                assert (repo / "artifact" / "reload.log").read_text() == (runner_temp / "reload.log").read_text()
+                assert (repo / "artifact" / "reload-compiler.log").read_text() == inner_log.read_text()
+                # No surviving heartbeat or sleep may retain the build's process
+                # group after success, failure or cancellation.
+                try:
+                    os.killpg(process.pid, 0)
+                except ProcessLookupError:
+                    pass
+                else:
+                    raise AssertionError("heartbeat process survived build completion")
+            finally:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+
 def main() -> int:
     test_every_ref_spelling_of_one_commit_keys_identically()
     test_later_commit_restores_an_earlier_entry_under_any_ref_text()
     test_generic_fallback_names_no_branch_or_commit()
     test_off_default_dispatch_warns_that_its_save_is_private()
-    print("PASS: reload-build caches key on the commit and fall back across refs")
+    test_quiet_build_progress_logs_and_heartbeat_cleanup()
+    print("PASS: reload-build cache keys, quiet-build progress, logs and heartbeat cleanup")
     return 0
 
 

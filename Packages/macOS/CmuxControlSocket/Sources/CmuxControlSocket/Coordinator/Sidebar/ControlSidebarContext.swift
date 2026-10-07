@@ -1,5 +1,31 @@
 public import Foundation
 
+/// A condition evaluated against the live entry when a queued status mutation runs.
+public enum ControlSidebarStatusCondition: Sendable, Equatable {
+    /// The key must have no status entry.
+    case absent
+    /// The entry must have this exact value and the default presentation.
+    case defaultValue(String)
+
+    /// Tests a live snapshot without accepting changes to its presentation.
+    ///
+    /// - Parameter entry: The current entry, or `nil` when the key is absent.
+    /// - Returns: Whether the mutation may change both status and PID tracking.
+    public func matches(_ entry: ControlSidebarStatusEntrySnapshot?) -> Bool {
+        switch self {
+        case .absent:
+            return entry == nil
+        case .defaultValue(let value):
+            guard let entry else { return false }
+            // Swift string equality normalizes Unicode; ownership requires the
+            // exact observed bytes so a later human edit cannot compare equal.
+            return entry.value.utf8.elementsEqual(value.utf8)
+                && entry.icon == nil && entry.color == nil && entry.urlAbsoluteString == nil
+                && entry.priority == 0 && entry.format == .plain && entry.workState == nil
+        }
+    }
+}
+
 /// The sidebar-domain slice of the control-command seam (a constituent of the
 /// ``ControlCommandContext`` umbrella): live app reach for the v1 sidebar
 /// metadata commands (`set_status` … `sidebar_state`), the v1 bonsplit pane
@@ -51,7 +77,8 @@ public protocol ControlSidebarContext: AnyObject {
 
     // MARK: Scheduled sidebar mutations (status / agent / blocks)
 
-    /// Enqueues the `set_status`/`report_meta` upsert mutation.
+    /// Enqueues the `set_status`/`report_meta` upsert mutation. A non-nil
+    /// condition must be checked at drain before status or PID side effects.
     nonisolated func controlSidebarScheduleStatusUpsert(
         target: ControlSidebarTabTarget,
         key: String,
@@ -63,14 +90,18 @@ public protocol ControlSidebarContext: AnyObject {
         format: ControlSidebarMetadataFormat,
         panelID: UUID?,
         pid: Int32?,
-        workState: ControlSidebarAgentWorkState?
+        workState: ControlSidebarAgentWorkState?,
+        persist: Bool,
+        condition: ControlSidebarStatusCondition?
     )
 
-    /// Enqueues the `clear_status`/`clear_meta` removal mutation.
+    /// Enqueues the `clear_status`/`clear_meta` removal mutation. A non-nil
+    /// condition must be checked at drain before status or PID side effects.
     nonisolated func controlSidebarScheduleStatusClear(
         target: ControlSidebarTabTarget,
         key: String,
-        panelID: UUID?
+        panelID: UUID?,
+        condition: ControlSidebarStatusCondition?
     )
 
     /// Enqueues the `set_agent_pid` record mutation.

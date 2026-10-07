@@ -83,6 +83,15 @@ without including the retry.
 Package tests establish package behavior, not app wiring. After changing a public
 interface, compile the consumers and app-host test target below.
 
+For titlebar window-observer changes, run
+`python3 tests/test_titlebar_window_lifecycle.py` on macOS with the Swift compiler.
+This harness compiles the production observer methods with Swift 6 and AppKit,
+then exercises actual `NSWindow` deallocation and geometry detach/reattach without
+a socket or full app build. It protects against registering a weak reference while
+AppKit still exposes a deallocating window, which aborts the process. It also checks
+that reattachment leaves no duplicate observers. This is focused native behavior
+evidence, not proof of complete app wiring or a substitute for tagged runtime checks.
+
 ## 3. Compile the app and tests without launching them
 
 Complete the [setup prerequisites](../CONTRIBUTING.md#getting-started) once. Use a

@@ -26,8 +26,18 @@ public struct SidebarStatusEntry: Equatable, Sendable {
     /// entry that is not an agent row, and on agent rows from a reporter that
     /// does not report it.
     public let workState: SidebarAgentWorkState?
+    /// Whether this entry's presentation is restored with its workspace session.
+    ///
+    /// Retains key/value, icon, color, HTTP(S) URL, priority, format, help text and
+    /// publication timestamp. Defaults to `false` because runtime agent status may
+    /// be stale after restart. Persistence never restores `workState`, agent PIDs
+    /// or execution state.
+    public let persist: Bool
 
     /// Creates a status row (defaults mirror the legacy initializer).
+    ///
+    /// - Parameter persist: Whether to restore this entry after restart; defaults
+    ///   to `false` to preserve the lifetime of existing runtime status reporters.
     public init(
         key: String,
         value: String,
@@ -38,7 +48,8 @@ public struct SidebarStatusEntry: Equatable, Sendable {
         format: SidebarMetadataFormat = .plain,
         timestamp: Date = Date(),
         helpText: String? = nil,
-        workState: SidebarAgentWorkState? = nil
+        workState: SidebarAgentWorkState? = nil,
+        persist: Bool = false
     ) {
         self.key = key
         self.value = value
@@ -50,5 +61,6 @@ public struct SidebarStatusEntry: Equatable, Sendable {
         self.timestamp = timestamp
         self.helpText = helpText
         self.workState = workState
+        self.persist = persist
     }
 }

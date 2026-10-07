@@ -1,5 +1,6 @@
 import CmuxControlSocket
 import CmuxCore
+import CmuxSidebar
 import Darwin
 import Foundation
 import Testing
@@ -569,6 +570,155 @@ extension AgentNotificationRegressionTests {
         #expect(
             !fixture.store.hasUnreadNotification(forTabId: fixture.source.id, surfaceId: fixture.panelId)
         )
+    }
+
+    @Test("Conditional status commands preserve changes made before mutation drain",
+          arguments: ["set_status", "clear_status", "report_meta", "clear_meta"])
+    func conditionalStatusGuardsLiveValueAndPresentation(command: String) throws {
+        let fixture = try makeFixture()
+        defer { fixture.restore() }
+        let bus = TerminalMutationBus.shared
+        bus.discardAllMutationsForTesting()
+        bus.setDrainsSuspendedForTesting(true)
+        defer {
+            bus.discardAllMutationsForTesting()
+            bus.setDrainsSuspendedForTesting(false)
+        }
+        let coordinator = ControlCommandCoordinator(context: TerminalController.shared)
+        let key = "conditional.history"
+        let isClear = command.hasPrefix("clear")
+        for change in ["value", "icon", "color", "url", "priority", "format", "work", "absent"] {
+            fixture.source.setStatusEntry(SidebarStatusEntry(
+                key: key, value: "observed", icon: nil, color: nil, url: nil,
+                priority: 0, format: .plain, timestamp: Date()
+            ), key: key, panelId: nil)
+            fixture.source.recordAgentPID(key: key, pid: 42_001, panelId: nil)
+            let args = "\(key)\(isClear ? "" : " replacement --pid=42002") --tab=\(fixture.source.id) --if-default-value=observed"
+            #expect(coordinator.handleSidebarV1(command: command, args: args) == "OK")
+            if change == "absent" {
+                fixture.source.clearStatusEntry(key: key, panelId: nil)
+            } else {
+                fixture.source.setStatusEntry(SidebarStatusEntry(
+                    key: key, value: change == "value" ? "human" : "observed",
+                    icon: change == "icon" ? "star" : nil,
+                    color: change == "color" ? "#123456" : nil,
+                    url: change == "url" ? URL(string: "https://example.com") : nil,
+                    priority: change == "priority" ? 1 : 0,
+                    format: change == "format" ? .markdown : .plain,
+                    timestamp: Date(), workState: change == "work" ? .waiting : nil
+                ), key: key, panelId: nil)
+            }
+            let expected = fixture.source.statusEntries[key]
+            bus.drainForTesting()
+            #expect(fixture.source.statusEntries[key] == expected)
+            #expect(fixture.source.agentPIDs[key] == 42_001)
+        }
+    }
+
+    @Test("Direct conditional panel mutations cannot overwrite a workspace-owned status",
+          arguments: [false, true])
+    func conditionalPanelContextCannotUseAStalePanelCopy(clear: Bool) throws {
+        let fixture = try makeFixture()
+        defer { fixture.restore() }
+        let bus = TerminalMutationBus.shared
+        bus.setDrainsSuspendedForTesting(true)
+        defer {
+            bus.discardAllMutationsForTesting()
+            bus.setDrainsSuspendedForTesting(false)
+        }
+        let key = "conditional.panel"
+        for condition in [ControlSidebarStatusCondition.absent, .defaultValue("observed")] {
+            fixture.source.removeStatusEntry(forKey: key)
+            if condition == .defaultValue("observed") {
+                fixture.source.setStatusEntry(SidebarStatusEntry(key: key, value: "observed"),
+                    key: key, panelId: fixture.panelId)
+            }
+            let human = SidebarStatusEntry(key: key, value: "human workspace edit", icon: "star")
+            fixture.source.setStatusEntry(human, key: key, panelId: nil)
+            fixture.source.recordAgentPID(key: key, pid: 42_001, panelId: fixture.panelId)
+            let expectedPanel = fixture.source.agentStatusEntriesByPanelId[fixture.panelId]?[key]
+            if clear {
+                TerminalController.shared.controlSidebarScheduleStatusClear(
+                    target: .workspace(fixture.source.id), key: key,
+                    panelID: fixture.panelId, condition: condition
+                )
+            } else {
+                TerminalController.shared.controlSidebarScheduleStatusUpsert(
+                    target: .workspace(fixture.source.id), key: key, value: "automated",
+                    icon: nil, color: nil, url: nil, priority: 0, format: .plain,
+                    panelID: fixture.panelId, pid: 42_002, workState: nil, condition: condition
+                )
+            }
+            bus.drainForTesting()
+            #expect(fixture.source.statusEntries[key] == human)
+            #expect(fixture.source.agentStatusEntriesByPanelId[fixture.panelId]?[key] == expectedPanel)
+            #expect(fixture.source.agentPIDs[key] == 42_001)
+        }
+    }
+
+    @Test("Conditional status admission follows queue order and guards PID side effects")
+    func conditionalStatusAdmissionOrderAndLegacyPIDUpdates() throws {
+        let fixture = try makeFixture()
+        defer { fixture.restore() }
+        let bus = TerminalMutationBus.shared
+        bus.setDrainsSuspendedForTesting(true)
+        defer {
+            bus.discardAllMutationsForTesting()
+            bus.setDrainsSuspendedForTesting(false)
+        }
+        let coordinator = ControlCommandCoordinator(context: TerminalController.shared)
+        let key = "conditional.history"
+        let target = "--tab=\(fixture.source.id)"
+        for (value, pid) in [("first", 42_001), ("second", 42_002)] {
+            #expect(coordinator.handleSidebarV1(command: "set_status",
+                args: "\(key) \(value) --pid=\(pid) \(target) --if-absent=true") == "OK")
+        }
+        bus.drainForTesting()
+        #expect(fixture.source.statusEntries[key]?.value == "first")
+        #expect(fixture.source.agentPIDs[key] == 42_001)
+
+        #expect(coordinator.handleSidebarV1(command: "report_meta",
+            args: "\(key) first --pid=42003 \(target) --if-default-value=first") == "OK")
+        bus.drainForTesting()
+        #expect(fixture.source.agentPIDs[key] == 42_003)
+        #expect(coordinator.handleSidebarV1(command: "report_meta",
+            args: "\(key) updated --pid=42004 \(target) --if-default-value=first") == "OK")
+        bus.drainForTesting()
+        #expect(fixture.source.statusEntries[key]?.value == "updated")
+        #expect(fixture.source.agentPIDs[key] == 42_004)
+        #expect(coordinator.handleSidebarV1(command: "clear_meta",
+            args: "\(key) \(target) --if-default-value=updated") == "OK")
+        bus.drainForTesting()
+        #expect(fixture.source.statusEntries[key] == nil)
+        #expect(fixture.source.agentPIDs[key] == nil)
+
+        for command in ["set_status", "clear_status"] {
+            let value = command == "set_status" ? " automated --pid=42005" : ""
+            #expect(coordinator.handleSidebarV1(command: command,
+                args: "\(key)\(value) \(target) --if-absent=true") == "OK")
+            fixture.source.setStatusEntry(SidebarStatusEntry(
+                key: key, value: "human", icon: nil, color: nil, url: nil,
+                priority: 0, format: .plain, timestamp: Date()
+            ), key: key, panelId: nil)
+            fixture.source.recordAgentPID(key: key, pid: 42_006, panelId: nil)
+            bus.drainForTesting()
+            #expect(fixture.source.statusEntries[key]?.value == "human")
+            #expect(fixture.source.agentPIDs[key] == 42_006)
+            fixture.source.clearStatusEntry(key: key, panelId: nil)
+        }
+        #expect(coordinator.handleSidebarV1(command: "set_status",
+            args: "\(key) legacy --pid=42007 \(target)") == "OK")
+        bus.drainForTesting()
+        #expect(fixture.source.statusEntries[key]?.value == "legacy")
+        #expect(fixture.source.agentPIDs[key] == 42_007)
+        #expect(coordinator.handleSidebarV1(command: "set_status",
+            args: "\(key) legacy --pid=42008 \(target)") == "OK")
+        bus.drainForTesting()
+        #expect(fixture.source.agentPIDs[key] == 42_008)
+        #expect(coordinator.handleSidebarV1(command: "clear_status", args: "\(key) \(target)") == "OK")
+        bus.drainForTesting()
+        #expect(fixture.source.statusEntries[key] == nil)
+        #expect(fixture.source.agentPIDs[key] == nil)
     }
 
     @Test("Agent runtime mutations follow a pane that moves before queue drain")

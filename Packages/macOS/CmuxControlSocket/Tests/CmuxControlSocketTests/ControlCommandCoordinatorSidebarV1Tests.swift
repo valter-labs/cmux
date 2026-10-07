@@ -5,6 +5,167 @@ import Testing
 @MainActor
 @Suite("ControlCommandCoordinator sidebar v1 dispatch")
 struct ControlCommandCoordinatorSidebarV1Tests {
+    @Test(arguments: ["list_status", "list_meta"])
+    func structuredStatusListingPreservesExactValues(command: String) throws {
+        let context = FakeSidebarV1ControlCommandContext()
+        let value = "human line\ncmux-safe-ops.last-turn.v1=foo=bar \"quoted\"\\tail\r\t"
+        context.statusEntries = [ControlSidebarStatusEntrySnapshot(
+            key: "human", value: value, icon: "bolt", color: "#123456",
+            urlAbsoluteString: "https://example.com/path?a=b", priority: 5, format: .markdown, workState: .waiting
+        ), ControlSidebarStatusEntrySnapshot(
+            key: "default", value: "normal", icon: nil, color: nil,
+            urlAbsoluteString: nil, priority: 0, format: .plain
+        )]
+        let coordinator = ControlCommandCoordinator(context: context)
+        let response = try #require(coordinator.handleSidebarV1(command: command, args: "--json=true"))
+        #expect(!response.contains("\n"))
+        let decoded = JSONValue(foundationObject: try JSONSerialization.jsonObject(with: Data(response.utf8)))
+        #expect(decoded == .object([
+            "entries": .object(["human": .string(value), "default": .string("normal")]),
+            "metadata": .object(["human": .object([
+                "icon": .string("bolt"), "color": .string("#123456"), "url": .string("https://example.com/path?a=b"),
+                "priority": .int(5), "format": .string("markdown"), "work": .string("waiting")
+            ])])
+        ]))
+        #expect(coordinator.handleSidebarV1(command: command, args: "")
+            == "human=\(value) icon=bolt color=#123456 url=https://example.com/path?a=b priority=5 format=markdown work=waiting\ndefault=normal")
+        #expect(coordinator.handleSidebarV1(command: command, args: "--json=false")
+            == coordinator.handleSidebarV1(command: command, args: ""))
+    }
+
+    @Test(arguments: ["list_status", "list_meta"])
+    func structuredStatusListingPreservesEmptyAndMissingTargets(command: String) throws {
+        let context = FakeSidebarV1ControlCommandContext()
+        let coordinator = ControlCommandCoordinator(context: context)
+        #expect(coordinator.handleSidebarV1(command: command, args: "--json=true") == "ERROR: Tab not found")
+        context.statusEntries = []
+        let response = try #require(coordinator.handleSidebarV1(command: command, args: "--json=true"))
+        let decoded = JSONValue(foundationObject: try JSONSerialization.jsonObject(with: Data(response.utf8)))
+        #expect(decoded == .object(["entries": .object([:]), "metadata": .object([:])]))
+        #expect(coordinator.handleSidebarV1(command: command, args: "")
+            == (command == "list_status" ? "No status entries" : "No metadata entries"))
+    }
+
+    @Test(arguments: ["set_status", "report_meta", "clear_status", "clear_meta"])
+    func invalidStatusConditionsRejectBeforeEnqueue(command: String) {
+        for option in ["--if-absent=false", "--if-absent", "--if-absent=maybe",
+                       "--if-default-value", "--if-absent=true --if-default-value=old",
+                       "--if-default-value=old --if-default-value=new",
+                       "--if-absent=true --if-absent=true"] {
+            let context = FakeSidebarV1ControlCommandContext()
+            let coordinator = ControlCommandCoordinator(context: context)
+            let value = command.hasPrefix("clear") ? "" : " new"
+            let response = coordinator.handleSidebarV1(
+                command: command, args: "history\(value) --tab=\(UUID().uuidString) \(option)"
+            )
+            #expect(response?.hasPrefix("ERROR:") == true, "Rejected condition: \(command) \(option)")
+            #expect(context.statusUpsertCall == nil)
+            #expect(context.statusClearCall == nil)
+        }
+    }
+
+    @Test(arguments: ["set_status", "report_meta", "clear_status", "clear_meta"])
+    func statusConditionsForwardExactValuesAndLegacyNil(command: String) {
+        let expected = " observed\nfoo=bar \"quoted\"\\tail\r\t "
+        let quoted = expected.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\r", with: "\\r")
+            .replacingOccurrences(of: "\t", with: "\\t")
+        for (option, expectedCondition) in [
+            ("", nil), ("--if-absent=true", ControlSidebarStatusCondition.absent),
+            ("--if-default-value=\"\(quoted)\"", .defaultValue(expected)),
+            ("--if-default-value=", .defaultValue(""))
+        ] {
+            let context = FakeSidebarV1ControlCommandContext()
+            let coordinator = ControlCommandCoordinator(context: context)
+            let value = command.hasPrefix("clear") ? "" : " replacement"
+            #expect(coordinator.handleSidebarV1(
+                command: command, args: "history\(value) --tab=\(UUID().uuidString) \(option)"
+            ) == "OK")
+            if command.hasPrefix("clear") {
+                #expect(context.statusClearCall != nil)
+                #expect(context.statusClearCall?.condition == expectedCondition)
+            } else {
+                #expect(context.statusUpsertCall != nil)
+                #expect(context.statusUpsertCall?.condition == expectedCondition)
+            }
+        }
+    }
+
+    @Test(arguments: ["set_status", "report_meta", "clear_status", "clear_meta"])
+    func conditionalStatusRejectsPanelScopeWhileLegacyStillForwards(command: String) {
+        let workspaceID = UUID()
+        let panelID = UUID()
+        let value = command.hasPrefix("clear") ? "" : " replacement"
+        for scope in ["--panel", "--surface"] {
+            for condition in ["--if-absent=true", "--if-default-value=observed"] {
+                let context = FakeSidebarV1ControlCommandContext()
+                let coordinator = ControlCommandCoordinator(context: context)
+                let response = coordinator.handleSidebarV1(command: command,
+                    args: "history\(value) --tab=\(workspaceID) \(scope)=\(panelID) \(condition)")
+                #expect(response == "ERROR: Conditional status mutations do not support --panel")
+                #expect(context.statusUpsertCall == nil)
+                #expect(context.statusClearCall == nil)
+            }
+            let context = FakeSidebarV1ControlCommandContext()
+            let coordinator = ControlCommandCoordinator(context: context)
+            #expect(coordinator.handleSidebarV1(command: command,
+                args: "history\(value) --tab=\(workspaceID) \(scope)=\(panelID)") == "OK")
+            if command.hasPrefix("clear") {
+                #expect(context.statusClearCall?.panelID == panelID)
+                #expect(context.statusClearCall?.condition == nil)
+            } else {
+                #expect(context.statusUpsertCall?.panelID == panelID)
+                #expect(context.statusUpsertCall?.condition == nil)
+            }
+        }
+    }
+
+    @Test func statusConditionsMatchOnlyAbsentOrExactDefaultPresentation() {
+        let value = "e\u{0301}\nfoo=bar \"quoted\""
+        let condition = ControlSidebarStatusCondition.defaultValue(value)
+        #expect(ControlSidebarStatusCondition.absent.matches(nil))
+        #expect(!condition.matches(nil))
+        for change in ["none", "value", "unicode", "icon", "color", "url", "priority", "format", "work"] {
+            let entry = ControlSidebarStatusEntrySnapshot(
+                key: "history", value: change == "value" ? "human" : change == "unicode" ? "é\nfoo=bar \"quoted\"" : value,
+                icon: change == "icon" ? "star" : nil,
+                color: change == "color" ? "#123456" : nil,
+                urlAbsoluteString: change == "url" ? "https://example.com" : nil,
+                priority: change == "priority" ? 1 : 0,
+                format: change == "format" ? .markdown : .plain,
+                workState: change == "work" ? .waiting : nil
+            )
+            #expect(!ControlSidebarStatusCondition.absent.matches(entry))
+            #expect(condition.matches(entry) == (change == "none"))
+        }
+    }
+
+    @Test func statusPersistenceIsExplicitAndValidatedBeforeMutation() {
+        for (option, expected) in [("", false), (" --persist true", true), (" --persist=false", false)] {
+            let context = FakeSidebarV1ControlCommandContext()
+            let coordinator = ControlCommandCoordinator(context: context)
+            let response = coordinator.handleSidebarV1(
+                command: "set_status",
+                args: "history Last conversation --tab=\(UUID().uuidString)\(option)"
+            )
+            #expect(response == "OK")
+            #expect(context.statusUpsertCall?.persist == expected)
+            #expect(context.statusUpsertCall?.value == "Last conversation")
+        }
+        for option in [" --persist", " --persist=maybe"] {
+            let context = FakeSidebarV1ControlCommandContext()
+            let coordinator = ControlCommandCoordinator(context: context)
+            let response = coordinator.handleSidebarV1(
+                command: "set_status",
+                args: "history Last conversation --tab=\(UUID().uuidString)\(option)"
+            )
+            #expect(response?.hasPrefix("ERROR: Invalid persist value") == true)
+            #expect(context.statusUpsertCall == nil)
+        }
+    }
+
     @Test func agentPIDClearForwardsOwnedKeyRequirement() {
         let context = FakeSidebarV1ControlCommandContext()
         let coordinator = ControlCommandCoordinator(context: context)
