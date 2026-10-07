@@ -830,6 +830,9 @@ SHARED_WEB_WORKFLOW_PREFIXES = (
 # smoke checks, then cli-product-tests) runs besides the cmux-cli target's own
 # compile inputs, which cli_target_inputs() reads from the Xcode project.
 CLI_LANE_EXACT_INPUTS = frozenset({
+    # The no-socket lane executes the native sidebar focus projection discriminator.
+    "Sources/Workspace+CustomSidebarSnapshot.swift",
+    "tests/test_custom_sidebar_agent_focus.py",
     # Checked-out submodules: bonsplit is a local package of the project the
     # lane resolves, and ghostty supplies the GhosttyKit.xcframework binary
     # target that CmuxTerminalCore (in the cmux-cli closure) re-vends.
