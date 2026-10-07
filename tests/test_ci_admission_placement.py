@@ -136,6 +136,56 @@ class Workflow(unittest.TestCase):
     def setUpClass(cls):
         cls.jobs = yaml.safe_load((WORKFLOWS / "ci-macos.yml").read_text())["jobs"]
 
+    def product_runner_context(self, owner, *, attempt=1, actor="person", event="pull_request",
+                               owned="", late_attempt=0, late=None, shard="owned-shard", gui="owned-gui"):
+        return {
+            "github": {"repository_owner": owner, "run_attempt": attempt,
+                       "triggering_actor": actor, "event_name": event},
+            "matrix": {"shard": 1},
+            "inputs": {"pr_owned_jobs": owned, "pr_retry_runner": "blacksmith-12vcpu-macos-26",
+                       "pr_shard_runner": shard, "pr_gui_runner": gui},
+            "needs": {"late-placement": {"outputs": {"attempt": late_attempt,
+                                                        "runners": json.dumps(late or {})}},
+                      "macos-compile-admission": {"outputs": {"runner": "macos-26"}}},
+        }
+
+    def assert_product_runners(self, context, expected):
+        for name in ("app-host-unit-tests", "cli-product-tests"):
+            job = self.jobs[name]
+            requested = next(step["env"]["REQUESTED_RUNNER"] for step in job["steps"]
+                             if "REQUESTED_RUNNER" in step.get("env", {}))
+            for expression in (job["runs-on"], requested):
+                with self.subTest(job=name, owner=context["github"]["repository_owner"],
+                                  attempt=context["github"]["run_attempt"], expression=expression):
+                    self.assertEqual(evaluate(expression, context), expected[name])
+
+    def test_fork_product_consumers_ignore_inaccessible_owned_and_retry_pools(self):
+        for owner in ("valter-labs", "another-fork"):
+            for event in ("pull_request", "workflow_dispatch", "push"):
+                for attempt in (1, 3):
+                    for late_attempt in (0, attempt):
+                        context = self.product_runner_context(
+                            owner, event=event, attempt=attempt, actor="github-actions[bot]",
+                            late_attempt=late_attempt,
+                            late={"shard-1": "late-owned-shard", "cli-product": "late-owned-cli"})
+                        self.assert_product_runners(context, {
+                            "app-host-unit-tests": "macos-26", "cli-product-tests": "macos-26"})
+
+    def test_upstream_product_consumers_preserve_placement_retry_and_fallback(self):
+        cases = [
+            ({"late_attempt": 1, "late": {"shard-1": "late-shard", "cli-product": "late-cli"}},
+             ("late-shard", "late-cli")),
+            ({}, ("blacksmith-12vcpu-macos-26", "blacksmith-12vcpu-macos-26")),
+            ({"owned": " shard-1 cli-product "}, ("owned-shard", "owned-gui")),
+            ({"owned": " shard-1 cli-product ", "attempt": 3, "actor": "github-actions[bot]"},
+             ("blacksmith-12vcpu-macos-26", "blacksmith-12vcpu-macos-26")),
+            ({"owned": " shard-1 cli-product ", "attempt": 3}, ("owned-shard", "owned-gui")),
+            ({"owned": " shard-1 cli-product ", "shard": "", "gui": ""}, ("macos-26", "macos-26")),
+        ]
+        for options, expected in cases:
+            self.assert_product_runners(self.product_runner_context("manaflow-ai", **options),
+                                        dict(zip(("app-host-unit-tests", "cli-product-tests"), expected)))
+
     def test_hosted_fork_budget_covers_compile_setup_and_changed_tests(self):
         admission = self.jobs["macos-compile-admission"]
         compile_step = next(step for step in admission["steps"] if step.get("id") == "hosted-compile")
