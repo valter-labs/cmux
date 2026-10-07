@@ -363,6 +363,17 @@ with:
   `custom_sidebar.workspace_status_entries` and
   `custom_sidebar.persistent_status_entries` before publishing durable data.
 
+  `cmux list-status --json` returns `{ "entries": {}, "metadata": {} }` when
+  empty. `entries` maps keys to exact text values, including newlines and empty
+  strings. `metadata` maps keys to present non-default presentation attributes:
+  `icon`, `color`, `url`, nonzero `priority`, non-plain `format` and live `work`.
+  It does not expose help text or publication timestamps. Tools that compare or
+  remove owned entries should require
+  `custom_sidebar.structured_status_entries` and use this structured readback;
+  the human text listing cannot unambiguously represent multiline values. Check
+  presentation attributes as well as text so an unchanged value with a manually
+  added icon, link, color or format does not lose the user's edit.
+
   `status` is always reported, independently of whether the built-in status
   glyph is visible. That glyph needs two further conditions the context does
   not carry: the workspace-todo feature has to be on, which happens through the

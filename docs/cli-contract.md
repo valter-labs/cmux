@@ -201,7 +201,7 @@ Environment:
 | `right-sidebar` | Control right sidebar visibility, mode, focus, and state reads. |
 | `set-status` | Set a sidebar status pill; `--persist true` retains its presentation across workspace restoration. |
 | `clear-status` | Remove a sidebar status pill. |
-| `list-status` | List sidebar status pills. |
+| `list-status` | List sidebar status pills; `--json` returns exact key/value strings in `entries` and non-default presentation attributes in `metadata`, preserving multiline values. |
 | `set-progress` | Set sidebar progress. |
 | `clear-progress` | Clear sidebar progress. |
 | `log` | Append a sidebar log entry. |
