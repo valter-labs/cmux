@@ -2521,7 +2521,8 @@ class Wiring(unittest.TestCase):
 
     def test_a_rerun_of_failed_shards_leaves_the_owned_pool_only_past_attempt_two(self):
         shards = self.workflow("ci-macos.yml")["jobs"]["app-host-unit-tests"]
-        self.assertEqual(shards["runs-on"], "${{ needs.late-placement.outputs.attempt == github.run_attempt && fromJSON(needs.late-placement.outputs.runners || '{}')"
+        self.assertEqual(shards["runs-on"], "${{ github.repository_owner != 'manaflow-ai' && 'macos-26' || "
+                                            "needs.late-placement.outputs.attempt == github.run_attempt && fromJSON(needs.late-placement.outputs.runners || '{}')"
                                             "[format('shard-{0}', matrix.shard)] "
                                             "|| (github.run_attempt > 2 && (github.triggering_actor == 'github-actions[bot]' || github.event_name != 'pull_request') || !contains(inputs.pr_owned_jobs, "
                                             "format(' shard-{0} ', matrix.shard))) && inputs.pr_retry_runner "

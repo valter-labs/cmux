@@ -39,7 +39,6 @@ CHECKS = (
     ("remote-tmux-waits-tests", "static_analysis", "Remote-tmux time-based wait lint tests", ["bash", "scripts/lint-remote-tmux-no-polling.test.sh"]),
     ("remote-tmux-waits", "static_analysis", "Remote-tmux time-based waits", ["bash", "scripts/lint-remote-tmux-no-polling.sh"]),
     ("feature-flags", "static_analysis", "Feature flag policy", ["python3", "scripts/lint-feature-flags.py"]),
-    ("release-build-archs", "tests", "Release and nightly architecture guards", ["bash", "tests/test_ci_release_build_archs.sh"]),
 )
 
 
@@ -77,11 +76,6 @@ CHECK_INPUTS = {
                           "scripts/remote-tmux-polling-baseline.txt"),
     "feature-flags": ("web/*", "Sources/*", "Packages/*", "ios/*", "CLI/*",
                       "scripts/retired-feature-flags.txt"),
-    "release-build-archs": (".github/workflows/nightly.yml", ".github/workflows/ci-macos.yml",
-                            "scripts/ci/release-build-archs.sh", "scripts/ci/verify-binary-archs.sh",
-                            "scripts/install-prebuilt-ghostty-cli-helper.sh",
-                            "tests/test_ci_release_helper_archs.py", "tests/test_nightly_universal_build.sh",
-                            "tests/test_seed_derived_data.py"),
 }
 
 

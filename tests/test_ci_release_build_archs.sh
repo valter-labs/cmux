@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 # The CI Release check is universal unless a maintainer opts into arm64, and
-# nightly never takes that option.
+# published nightly builds remain universal; unsigned build-only runs may opt in.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 RESOLVER="$ROOT_DIR/scripts/ci/release-build-archs.sh"
-NIGHTLY_FILE="$ROOT_DIR/.github/workflows/nightly.yml"
 
 expect() {
   local input="$1" want="$2" got
@@ -69,11 +68,10 @@ if verify "arm64"; then
   exit 1
 fi
 
-if grep -n -E 'CI_RELEASE_BUILD_ARCHS|release-build-archs\.sh|release_archs' "$NIGHTLY_FILE"; then
-  echo "FAIL: nightly builds what ships and must stay universal unconditionally"
-  exit 1
-fi
+# The resolver's presence alone cannot distinguish an unsigned measurement from
+# publication. Exercise the workflow's gates and architecture selection instead.
+bash "$ROOT_DIR/tests/test_nightly_universal_build.sh"
 
 python3 "$ROOT_DIR/tests/test_ci_release_helper_archs.py"
 
-echo "PASS: the CI Release check defaults to universal, arm64 is opt-in, and nightly cannot be narrowed"
+echo "PASS: CI Release and unsigned build-only ARM64 are opt-in; published nightly stays universal"
