@@ -85,6 +85,10 @@ path = "tests/test_cli_status_json_arguments.py"
 lane = "macos-cli-no-socket"
 
 [[test]]
+path = "tests/test_custom_sidebar_agent_focus.py"
+lane = "macos-cli-no-socket"
+
+[[test]]
 path = "tests/test_cli_workspace_mutation_arguments.py"
 lane = "macos-cli-no-socket"
 requirements = ["cmux-cli"]
