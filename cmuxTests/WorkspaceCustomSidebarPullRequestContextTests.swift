@@ -10,6 +10,27 @@ import CmuxSwiftRender
 #endif
 
 final class WorkspaceCustomSidebarPullRequestContextTests: XCTestCase {
+    @MainActor
+    func testAutosaveTracksPersistentStatusChangesWithoutChangingEntryCount() throws {
+        let manager = TabManager()
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        let key = "history"
+        let publication = Date(timeIntervalSince1970: 0)
+        workspace.statusEntries[key] = SidebarStatusEntry(key: key, value: "Earlier", timestamp: publication)
+        let transientFingerprint = manager.sessionAutosaveFingerprint()
+
+        workspace.statusEntries[key] = SidebarStatusEntry(key: key, value: "Earlier", timestamp: publication, persist: true)
+        let persistentFingerprint = manager.sessionAutosaveFingerprint()
+        XCTAssertNotEqual(transientFingerprint, persistentFingerprint)
+
+        workspace.statusEntries[key] = SidebarStatusEntry(key: key, value: "Later", timestamp: publication, persist: true)
+        let updatedFingerprint = manager.sessionAutosaveFingerprint()
+        XCTAssertNotEqual(persistentFingerprint, updatedFingerprint)
+
+        workspace.statusEntries[key] = SidebarStatusEntry(key: key, value: "Later", timestamp: publication)
+        XCTAssertNotEqual(updatedFingerprint, manager.sessionAutosaveFingerprint())
+    }
+
     func testCapabilitiesAdvertiseCustomSidebarStatusSupport() throws {
         let capabilities = TerminalController.shared.v2CapabilitiesWithBrowserDesignMode(params: [:])
         let customSidebar = try XCTUnwrap(capabilities["custom_sidebar"] as? [String: Bool])
