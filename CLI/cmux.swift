@@ -8197,7 +8197,7 @@ struct CMUXCLI {
         case "list-status":
             let response = try forwardSidebarMetadataCommand(
                 "list_status",
-                commandArgs: commandArgs,
+                commandArgs: commandArgs + (jsonOutput ? ["--json=true"] : []),
                 client: client,
                 windowOverride: windowId
             )

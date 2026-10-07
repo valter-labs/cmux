@@ -178,18 +178,24 @@ extension ControlCommandCoordinator {
     }
 
     /// The shared `list_status`/`list_meta` body: one main hop returns the
-    /// Sendable snapshots; line formatting runs on the calling thread.
+    /// Sendable snapshots; text or opt-in JSON formatting runs on the calling thread.
     nonisolated func sidebarListMetadata(
         _ args: String,
         emptyMessage: String,
         context: (any ControlCommandContext)?
     ) -> String {
-        let tabArg = sidebarParseOptions(args).options["tab"]
+        let options = sidebarParseOptions(args).options
+        let tabArg = options["tab"]
         let snapshot = context.map { seam in
             seam.controlSidebarOnMain { $0.controlSidebarStatusEntries(tabArg: tabArg) }
         } ?? nil
         guard let entries = snapshot else {
             return "ERROR: Tab not found"
+        }
+        if options["json"] == "true" {
+            // Native snapshots originate from the workspace's keyed status dictionary.
+            let values = Dictionary(uniqueKeysWithValues: entries.map { ($0.key, JSONValue.string($0.value)) })
+            return ControlResponseEncoder().encode(.object(["entries": .object(values)]))
         }
         if entries.isEmpty {
             return emptyMessage
