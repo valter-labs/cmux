@@ -207,10 +207,11 @@ jobs:
           git diff --exit-code "$client_commit" HEAD -- cmux-tui ghostty
           client_bundle="$RUNNER_TEMP/cmux-tui-prebuilt"
           mkdir -p "$client_bundle/Contents"
+          # Forks consume upstream-published clients too; keep the installer's
+          # pinned publisher instead of substituting this build repository.
           env -u CMUX_TUI_CLIENT_LOCAL scripts/install-cmux-tui-client.sh "$client_bundle" \
             --manifest-url "https://files.cmux.com/cmux-tui/$client_commit/manifest.json" \
-            --expected-commit "$client_commit" --require-capability wireguard-hub \
-            --attest-signer-workflow "$GITHUB_REPOSITORY/.github/workflows/cmux-tui-artifacts.yml"
+            --expected-commit "$client_commit" --require-capability wireguard-hub
           client="$client_bundle/Contents/Resources/bin/cmux-tui"
           probe="$($client remote-probe --json)"
           version="$($client --version)"
