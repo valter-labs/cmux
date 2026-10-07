@@ -615,6 +615,47 @@ extension AgentNotificationRegressionTests {
         }
     }
 
+    @Test("Direct conditional panel mutations cannot overwrite a workspace-owned status",
+          arguments: [false, true])
+    func conditionalPanelContextCannotUseAStalePanelCopy(clear: Bool) throws {
+        let fixture = try makeFixture()
+        defer { fixture.restore() }
+        let bus = TerminalMutationBus.shared
+        bus.setDrainsSuspendedForTesting(true)
+        defer {
+            bus.discardAllMutationsForTesting()
+            bus.setDrainsSuspendedForTesting(false)
+        }
+        let key = "conditional.panel"
+        for condition in [ControlSidebarStatusCondition.absent, .defaultValue("observed")] {
+            fixture.source.removeStatusEntry(forKey: key)
+            if condition == .defaultValue("observed") {
+                fixture.source.setStatusEntry(SidebarStatusEntry(key: key, value: "observed"),
+                    key: key, panelId: fixture.panelId)
+            }
+            let human = SidebarStatusEntry(key: key, value: "human workspace edit", icon: "star")
+            fixture.source.setStatusEntry(human, key: key, panelId: nil)
+            fixture.source.recordAgentPID(key: key, pid: 42_001, panelId: fixture.panelId)
+            let expectedPanel = fixture.source.agentStatusEntriesByPanelId[fixture.panelId]?[key]
+            if clear {
+                TerminalController.shared.controlSidebarScheduleStatusClear(
+                    target: .workspace(fixture.source.id), key: key,
+                    panelID: fixture.panelId, condition: condition
+                )
+            } else {
+                TerminalController.shared.controlSidebarScheduleStatusUpsert(
+                    target: .workspace(fixture.source.id), key: key, value: "automated",
+                    icon: nil, color: nil, url: nil, priority: 0, format: .plain,
+                    panelID: fixture.panelId, pid: 42_002, workState: nil, condition: condition
+                )
+            }
+            bus.drainForTesting()
+            #expect(fixture.source.statusEntries[key] == human)
+            #expect(fixture.source.agentStatusEntriesByPanelId[fixture.panelId]?[key] == expectedPanel)
+            #expect(fixture.source.agentPIDs[key] == 42_001)
+        }
+    }
+
     @Test("Conditional status admission follows queue order and guards PID side effects")
     func conditionalStatusAdmissionOrderAndLegacyPIDUpdates() throws {
         let fixture = try makeFixture()

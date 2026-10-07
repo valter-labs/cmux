@@ -93,6 +93,35 @@ struct ControlCommandCoordinatorSidebarV1Tests {
         }
     }
 
+    @Test(arguments: ["set_status", "report_meta", "clear_status", "clear_meta"])
+    func conditionalStatusRejectsPanelScopeWhileLegacyStillForwards(command: String) {
+        let workspaceID = UUID()
+        let panelID = UUID()
+        let value = command.hasPrefix("clear") ? "" : " replacement"
+        for scope in ["--panel", "--surface"] {
+            for condition in ["--if-absent=true", "--if-default-value=observed"] {
+                let context = FakeSidebarV1ControlCommandContext()
+                let coordinator = ControlCommandCoordinator(context: context)
+                let response = coordinator.handleSidebarV1(command: command,
+                    args: "history\(value) --tab=\(workspaceID) \(scope)=\(panelID) \(condition)")
+                #expect(response == "ERROR: Conditional status mutations do not support --panel")
+                #expect(context.statusUpsertCall == nil)
+                #expect(context.statusClearCall == nil)
+            }
+            let context = FakeSidebarV1ControlCommandContext()
+            let coordinator = ControlCommandCoordinator(context: context)
+            #expect(coordinator.handleSidebarV1(command: command,
+                args: "history\(value) --tab=\(workspaceID) \(scope)=\(panelID)") == "OK")
+            if command.hasPrefix("clear") {
+                #expect(context.statusClearCall?.panelID == panelID)
+                #expect(context.statusClearCall?.condition == nil)
+            } else {
+                #expect(context.statusUpsertCall?.panelID == panelID)
+                #expect(context.statusUpsertCall?.condition == nil)
+            }
+        }
+    }
+
     @Test func statusConditionsMatchOnlyAbsentOrExactDefaultPresentation() {
         let value = "e\u{0301}\nfoo=bar \"quoted\""
         let condition = ControlSidebarStatusCondition.defaultValue(value)
