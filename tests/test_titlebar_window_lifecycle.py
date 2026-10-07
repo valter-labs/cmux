@@ -117,7 +117,15 @@ func run() {
         NotificationCenter.default.post(name: NSWindow.didResizeNotification, object: second)
         precondition(observer.invalidations == 2, "detached view still observes its window")
         precondition(!observer.refresh())
-        print("PASS: resize, unchanged identity, changed window and nil detach")
+        observer.view.probedWindow = first
+        precondition(observer.refresh())
+        precondition(observer.observerCount == TitlebarWindowGeometryNotifications.names.count)
+        precondition(!observer.refresh())
+        NotificationCenter.default.post(name: NSWindow.didResizeNotification, object: first)
+        precondition(observer.invalidations == 3, "reattached window has duplicate observers")
+        observer.view.probedWindow = nil
+        precondition(observer.refresh())
+        print("PASS: resize, unchanged identity, changed window, nil detach and reattach")
     }
     observer.stop()
 }
