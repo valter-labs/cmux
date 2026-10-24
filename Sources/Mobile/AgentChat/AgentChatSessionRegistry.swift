@@ -8,6 +8,7 @@ import Foundation
 @MainActor
 final class AgentChatSessionRegistry {
     private var records: [String: AgentChatSessionRecord] = [:]
+    private var cachedSessionRecords: [AgentChatSessionRecord]?
     private var sessionSurfaceIndex = ChatSessionSurfaceIndex<String>()
     private var liveSessionIDBySurfaceID: [String: String] = [:]
     private var liveClaudeSessionIDsBySurfaceID: [String: Set<String>] = [:]
@@ -74,9 +75,11 @@ final class AgentChatSessionRegistry {
     /// - Parameter workspaceID: Workspace UUID string filter, or `nil`.
     /// - Returns: Matching records.
     func sessions(workspaceID: String?) -> [AgentChatSessionRecord] {
-        return records.values
-            .filter { workspaceID == nil || $0.workspaceID == workspaceID }
-            .sorted { $0.lastActivityAt > $1.lastActivityAt }
+        // Each workspace asks for this list; sort once until a record changes.
+        let sorted = cachedSessionRecords ?? records.values.sorted { $0.lastActivityAt > $1.lastActivityAt }
+        cachedSessionRecords = sorted
+        guard let workspaceID else { return sorted }
+        return sorted.filter { $0.workspaceID == workspaceID }
     }
 
     /// Reconciles the session's exit watcher with its current pid. Called from
@@ -762,6 +765,7 @@ final class AgentChatSessionRegistry {
         replacing previous: AgentChatSessionRecord?
     ) {
         records[record.sessionID] = record
+        cachedSessionRecords = nil
         syncProcessExitWatch(for: record)
         updateSessionIndexes(previous: previous, current: record)
         onRecordChanged?(record, previous)
@@ -770,6 +774,7 @@ final class AgentChatSessionRegistry {
     /// Removes one record and reconciles every derived registry structure.
     private func removeRecord(sessionID: String) {
         guard var record = records.removeValue(forKey: sessionID) else { return }
+        cachedSessionRecords = nil
         stampVersion(&record)
         exitWatchers[sessionID]?.source.cancel()
         exitWatchers[sessionID] = nil
