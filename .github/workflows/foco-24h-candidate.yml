@@ -1,4 +1,5 @@
 name: Foco 24h candidate
+run-name: Foco 24h ${{ github.sha }}
 
 on:
   push:
