@@ -1,0 +1,82 @@
+name: Foco 24h candidate
+
+on:
+  push:
+    branches: [fix/foco-24h-session-cache]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: foco-24h-candidate-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  native:
+    if: github.repository == 'valter-labs/cmux' && github.ref == 'refs/heads/fix/foco-24h-session-cache'
+    runs-on: [self-hosted, valter-macos-vm]
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    env:
+      CMUX_DEV_BACKEND_MODE: local
+      CMUX_SKIP_ZIG_BUILD: "1"
+      CMUX_GHOSTTYKIT_PREPROVISIONED: "1"
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify checkout and Swift syntax
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 scripts/verify-local.py --only swift-syntax \
+            --swift Sources/Mobile/AgentChat/AgentChatSessionRegistry.swift \
+            cmuxTests/AgentChatSessionRegistryLifecycleTests.swift
+      - name: Select Xcode
+        run: |
+          mkdir -p foco-cache-evidence
+          {
+            sw_vers
+            xcode-select -p
+            swift --version
+            ./scripts/select-ci-xcode.sh
+          } 2>&1 | tee foco-cache-evidence/toolchain.txt
+      - name: Prepare native dependencies
+        run: |
+          git submodule update --init --recursive
+          GHOSTTYKIT_DOWNLOAD_RETRIES=2 GHOSTTYKIT_DOWNLOAD_RETRY_DELAY=5 \
+            GHOSTTYKIT_DOWNLOAD_MAX_TIME=120 ./scripts/download-prebuilt-ghosttykit.sh
+          ./scripts/install-rust-ci.sh
+          export PATH="$HOME/.cargo/bin:$PATH"
+          ./scripts/ensure-cmux-iroh.sh
+      - name: Build isolated candidate
+        run: |
+          ./scripts/reload.sh --tag foco-cache-20261024 \
+            --derived-data "$RUNNER_TEMP/foco-cache-app" \
+            --swift-frontend-workaround --no-global-cli-links \
+            2>&1 | tee foco-cache-evidence/build.txt
+          app_path="$(awk '/^App path:/{getline; sub(/^  /, ""); print; exit}' foco-cache-evidence/build.txt)"
+          test -d "$app_path"
+          bundle_id=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$app_path/Contents/Info.plist")
+          [[ "$bundle_id" == com.cmuxterm.app.debug.* ]]
+          ditto -c -k --sequesterRsrc --keepParent "$app_path" foco-cache-evidence/app.zip
+      - name: Run registry lifecycle tests
+        run: |
+          # Xcode expands inherited; the shell must preserve it literally.
+          # shellcheck disable=SC2016
+          ./scripts/test-unit.sh -derivedDataPath "$RUNNER_TEMP/foco-cache-tests" \
+            -resultBundlePath "$GITHUB_WORKSPACE/foco-cache-evidence/tests.xcresult" \
+            -only-testing:cmuxTests/AgentChatSessionRegistryLifecycleTests \
+            'OTHER_SWIFT_FLAGS=$(inherited) -no-emit-module-separately -Xllvm -aarch64-enable-global-isel-at-O=-1' \
+            test 2>&1 | tee foco-cache-evidence/tests.txt
+      - name: Upload build and verification evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: foco-24h-${{ github.sha }}
+          path: foco-cache-evidence/
+          if-no-files-found: warn
+          retention-days: 7
