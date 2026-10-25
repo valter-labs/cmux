@@ -16,7 +16,8 @@ concurrency:
 jobs:
   native:
     if: github.repository == 'valter-labs/cmux' && github.ref == 'refs/heads/fix/foco-24h-session-cache'
-    runs-on: [self-hosted, valter-macos-vm]
+    # The owned image has only CLT; use hosted Xcode until that image is provisioned.
+    runs-on: macos-26
     timeout-minutes: 90
     defaults:
       run:
