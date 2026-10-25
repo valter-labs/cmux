@@ -46,6 +46,13 @@ jobs:
             swift --version
             ./scripts/select-ci-xcode.sh
           } 2>&1 | tee foco-cache-evidence/toolchain.txt
+      - name: Set up Go for the Release tunnel extension
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.x'
+          cache: false
+      - name: Record Go toolchain
+        run: go version | tee -a foco-cache-evidence/toolchain.txt
       - name: Prepare native dependencies
         run: |
           git submodule update --init --recursive
