@@ -64,6 +64,8 @@ jobs:
           test "$RUNNER_ENVIRONMENT" = github-hosted
           test "$(id -un)" = runner
           test -z "$(pgrep -x cmux || true)"
+          # Xcode must expand its configuration macro after this file is written.
+          # shellcheck disable=SC2016
           printf 'CONFIGURATION_BUILD_DIR = %s/foco-stable-products/$(CONFIGURATION)\n' "$RUNNER_TEMP" > "$RUNNER_TEMP/foco-release.xcconfig"
           # Match reload.sh's Xcode 26.6 frontend workaround without changing app code.
           cat >> "$RUNNER_TEMP/foco-release.xcconfig" <<'XCCONFIG'
