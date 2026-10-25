@@ -1,9 +1,9 @@
 name: Foco 24h candidate
-run-name: Foco 24h Release ${{ github.sha }}
+run-name: Foco 24h stable package ${{ github.sha }}
 
 on:
   push:
-    branches: [build/foco-24h-release]
+    branches: [build/foco-24h-stable]
   workflow_dispatch:
 
 permissions:
@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   native:
-    if: github.repository == 'valter-labs/cmux' && github.ref == 'refs/heads/build/foco-24h-release'
+    if: github.repository == 'valter-labs/cmux' && github.ref == 'refs/heads/build/foco-24h-stable'
     # The owned image has only CLT; use hosted Xcode until that image is provisioned.
     runs-on: macos-26
     timeout-minutes: 120
@@ -58,24 +58,51 @@ jobs:
           git submodule update --init --recursive
           GHOSTTYKIT_DOWNLOAD_RETRIES=2 GHOSTTYKIT_DOWNLOAD_RETRY_DELAY=5 \
             GHOSTTYKIT_DOWNLOAD_MAX_TIME=120 ./scripts/download-prebuilt-ghosttykit.sh
-      - name: Build isolated optimized package
+      - name: Build stable-identity package in the disposable hosted runner
         run: |
-          ./scripts/reload.sh --tag foco-release-20261025 --name "cmux Foco" \
-            --release --derived-data "$RUNNER_TEMP/foco-release-app" \
-            --swift-frontend-workaround --no-global-cli-links \
-            2>&1 | tee foco-cache-evidence/build.txt
-          APP="$RUNNER_TEMP/foco-release-app/Build/Products/Release/cmux Foco.app"
-          test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$APP/Contents/Info.plist")" = "com.cmuxterm.app.debug.foco.release.20261025"
+          test "$GITHUB_ACTIONS" = true
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test "$(id -un)" = runner
+          test -z "$(pgrep -x cmux || true)"
+          printf 'CONFIGURATION_BUILD_DIR = %s/foco-stable-products/$(CONFIGURATION)\n' "$RUNNER_TEMP" > "$RUNNER_TEMP/foco-release.xcconfig"
+          # Match reload.sh's Xcode 26.6 frontend workaround without changing app code.
+          cat >> "$RUNNER_TEMP/foco-release.xcconfig" <<'XCCONFIG'
+          CODE_SIGNING_ALLOWED = NO
+          SWIFT_ENABLE_BATCH_MODE = NO
+          DEBUG_INFORMATION_FORMAT =
+          GCC_GENERATE_DEBUGGING_SYMBOLS = NO
+          CMUX_RELOAD_INTEGRATED_DRIVER_cmux = NO
+          SWIFT_USE_INTEGRATED_DRIVER = $(CMUX_RELOAD_INTEGRATED_DRIVER_$(TARGET_NAME):default=YES)
+          CMUX_RELOAD_INSTALL_MODULE_cmux = NO
+          SWIFT_INSTALL_MODULE = $(CMUX_RELOAD_INSTALL_MODULE_$(TARGET_NAME):default=YES)
+          CMUX_RELOAD_SWIFT_FLAGS_cmux = -no-emit-module-separately
+          OTHER_SWIFT_FLAGS = $(inherited) $(CMUX_RELOAD_SWIFT_FLAGS_$(TARGET_NAME)) -Xllvm -aarch64-enable-global-isel-at-O=-1
+          XCCONFIG
+          XCODE_XCCONFIG_FILE="$RUNNER_TEMP/foco-release.xcconfig" ./scripts/reloadp.sh 2>&1 | tee foco-cache-evidence/build.txt
+          APP="$RUNNER_TEMP/foco-stable-products/Release/cmux.app"
+          test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$APP/Contents/Info.plist")" = com.cmuxterm.app
+          # reloadp may launch only this job's fresh app; stop that exact executable before signing.
+          pids="$(pgrep -f "$APP/Contents/MacOS/cmux" || true)"
+          if [[ -n "$pids" ]]; then
+            while IFS= read -r pid; do
+              test "$(ps -p "$pid" -o comm=)" = "$APP/Contents/MacOS/cmux"
+              kill "$pid"
+            done <<< "$pids"
+          fi
+          codesign --force --deep --sign - --timestamp=none --generate-entitlement-der "$APP"
           codesign --verify --deep --strict "$APP"
-          ditto -c -k --keepParent "$APP" foco-cache-evidence/app.zip
+          lipo -verify_arch arm64 "$APP/Contents/MacOS/cmux"
+          CMUX_SMOKE_DIRECT_EXEC=1 CMUX_SMOKE_STABLE_SECONDS=10 ./scripts/smoke-launch-macos-app.sh "$APP" 2>&1 | tee foco-cache-evidence/launch-smoke.txt
+          grep -F 'launch smoke OK:' foco-cache-evidence/launch-smoke.txt
+          ditto -c -k --keepParent "$APP" foco-cache-evidence/cmux-foco-stable.zip
           git rev-parse HEAD > foco-cache-evidence/source-sha.txt
           git ls-tree HEAD Sources cmuxTests scripts cmux.xcodeproj > foco-cache-evidence/source-trees.txt
-          shasum -a 256 foco-cache-evidence/app.zip > foco-cache-evidence/SHA256SUMS
+          shasum -a 256 foco-cache-evidence/cmux-foco-stable.zip > foco-cache-evidence/SHA256SUMS
       - name: Upload build and verification evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: foco-24h-release-${{ github.sha }}
+          name: foco-24h-stable-${{ github.sha }}
           path: foco-cache-evidence/
           if-no-files-found: warn
           retention-days: 7
