@@ -1,9 +1,9 @@
 name: Foco 24h candidate
-run-name: Foco 24h registry tests ${{ github.sha }}
+run-name: Foco 24h Release ${{ github.sha }}
 
 on:
   push:
-    branches: [fix/foco-24h-session-cache]
+    branches: [build/foco-24h-release]
   workflow_dispatch:
 
 permissions:
@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   native:
-    if: github.repository == 'valter-labs/cmux' && github.ref == 'refs/heads/fix/foco-24h-session-cache'
+    if: github.repository == 'valter-labs/cmux' && github.ref == 'refs/heads/build/foco-24h-release'
     # The owned image has only CLT; use hosted Xcode until that image is provisioned.
     runs-on: macos-26
     timeout-minutes: 120
@@ -51,20 +51,24 @@ jobs:
           git submodule update --init --recursive
           GHOSTTYKIT_DOWNLOAD_RETRIES=2 GHOSTTYKIT_DOWNLOAD_RETRY_DELAY=5 \
             GHOSTTYKIT_DOWNLOAD_MAX_TIME=120 ./scripts/download-prebuilt-ghosttykit.sh
-      - name: Run registry lifecycle tests
+      - name: Build isolated optimized package
         run: |
-          # Xcode expands inherited; the shell must preserve it literally.
-          # shellcheck disable=SC2016
-          ./scripts/test-unit.sh -derivedDataPath "$RUNNER_TEMP/foco-cache-tests" \
-            -resultBundlePath "$GITHUB_WORKSPACE/foco-cache-evidence/tests.xcresult" \
-            -only-testing:cmuxTests/AgentChatSessionRegistryLifecycleTests \
-            'OTHER_SWIFT_FLAGS=$(inherited) $(CMUX_TEST_SWIFT_FLAGS_$(TARGET_NAME)) -Xllvm -aarch64-enable-global-isel-at-O=-1' \
-            test 2>&1 | tee foco-cache-evidence/tests.txt
+          ./scripts/reload.sh --tag foco-release-20261025 --name "cmux Foco" \
+            --release --derived-data "$RUNNER_TEMP/foco-release-app" \
+            --swift-frontend-workaround --no-global-cli-links \
+            2>&1 | tee foco-cache-evidence/build.txt
+          APP="$RUNNER_TEMP/foco-release-app/Build/Products/Release/cmux Foco.app"
+          test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$APP/Contents/Info.plist")" = "com.cmuxterm.app.debug.foco.release.20261025"
+          codesign --verify --deep --strict "$APP"
+          ditto -c -k --keepParent "$APP" foco-cache-evidence/app.zip
+          git rev-parse HEAD > foco-cache-evidence/source-sha.txt
+          git ls-tree HEAD Sources cmuxTests scripts cmux.xcodeproj > foco-cache-evidence/source-trees.txt
+          shasum -a 256 foco-cache-evidence/app.zip > foco-cache-evidence/SHA256SUMS
       - name: Upload build and verification evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: foco-24h-registry-${{ github.sha }}
+          name: foco-24h-release-${{ github.sha }}
           path: foco-cache-evidence/
           if-no-files-found: warn
           retention-days: 7
