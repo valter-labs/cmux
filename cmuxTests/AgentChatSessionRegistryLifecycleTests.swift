@@ -12,6 +12,70 @@ import Testing
 
 struct AgentChatSessionRegistryLifecycleTests {
     @MainActor
+    @Test func sessionListsRefreshBeforeChangeCallbacksAndKeepPriorSnapshotsStable() throws {
+        let registry = AgentChatSessionRegistry(restoredRecords: [
+            AgentChatSessionRecord(sessionID: "older", agentKind: .claude, workspaceID: "A",
+                state: .idle, lastActivityAt: Date(timeIntervalSince1970: 10)),
+            AgentChatSessionRecord(sessionID: "newer", agentKind: .codex, workspaceID: "B",
+                state: .idle, lastActivityAt: Date(timeIntervalSince1970: 20)),
+        ])
+        let previous = registry.sessions(workspaceID: nil)
+        #expect(previous.map(\.sessionID) == ["newer", "older"])
+        #expect(registry.sessions(workspaceID: "A").map(\.sessionID) == ["older"])
+        var callbackSnapshot: [AgentChatSessionRecord] = []
+        registry.onRecordChanged = { _, _ in callbackSnapshot = registry.sessions(workspaceID: nil) }
+        defer { registry.onRecordChanged = nil }
+
+        registry.update(sessionID: "older") { record in
+            record.workspaceID = "B"
+            record.title = "Updated"
+            record.lastActivityAt = Date(timeIntervalSince1970: 30)
+            record.state = .needsInput(since: record.lastActivityAt)
+        }
+
+        let updated = try #require(callbackSnapshot.first)
+        #expect(updated.sessionID == "older")
+        #expect(updated.title == "Updated")
+        #expect(updated.state == .needsInput(since: Date(timeIntervalSince1970: 30)))
+        #expect(registry.sessions(workspaceID: "A").isEmpty)
+        #expect(registry.sessions(workspaceID: "B").map(\.sessionID) == ["older", "newer"])
+        #expect(previous.last?.workspaceID == "A")
+        #expect(previous.last?.state == .idle)
+    }
+
+    @MainActor
+    @Test func sessionListsRefreshBeforeAliasRemovalCallbacks() throws {
+        let home = try temporaryHomeDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let surfaceID = UUID().uuidString
+        let pendingID = AgentChatSessionRegistry.pendingClaudeSessionID(surfaceID: surfaceID)
+        let registry = AgentChatSessionRegistry(
+            hookStore: AgentChatHookSessionStore(homeDirectory: home),
+            restoredRecords: [
+                AgentChatSessionRecord(sessionID: pendingID, agentKind: .claude, surfaceID: surfaceID,
+                    state: .idle, lastActivityAt: Date(timeIntervalSince1970: 10)),
+                AgentChatSessionRecord(sessionID: "real", agentKind: .claude, surfaceID: surfaceID,
+                    state: .idle, lastActivityAt: Date(timeIntervalSince1970: 20)),
+            ]
+        )
+        #expect(registry.sessions(workspaceID: nil).count == 2)
+        var removedIDs: [String] = []
+        var callbackIDs: [String] = []
+        registry.onRecordRemoved = { record in
+            removedIDs.append(record.sessionID)
+            callbackIDs = registry.sessions(workspaceID: nil).map(\.sessionID)
+        }
+        defer { registry.onRecordRemoved = nil }
+
+        registry.noteHookEvent(WorkstreamEvent(sessionId: "real", hookEventName: .sessionStart,
+            source: "claude", surfaceId: surfaceID, receivedAt: Date(timeIntervalSince1970: 30)))
+
+        #expect(removedIDs == [pendingID])
+        #expect(callbackIDs == ["real"])
+        #expect(registry.sessions(workspaceID: nil).map(\.sessionID) == ["real"])
+    }
+
+    @MainActor
     @Test("Idle notifications after Stop preserve idle state for Grok and Claude")
     func idleNotificationAfterStopAndSessionEndDoesNotReviveCompletedAgent() throws {
         let cases = [
