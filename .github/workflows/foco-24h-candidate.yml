@@ -51,9 +51,6 @@ jobs:
           git submodule update --init --recursive
           GHOSTTYKIT_DOWNLOAD_RETRIES=2 GHOSTTYKIT_DOWNLOAD_RETRY_DELAY=5 \
             GHOSTTYKIT_DOWNLOAD_MAX_TIME=120 ./scripts/download-prebuilt-ghosttykit.sh
-          ./scripts/install-rust-ci.sh
-          export PATH="$HOME/.cargo/bin:$PATH"
-          ./scripts/ensure-cmux-iroh.sh
       - name: Build isolated candidate
         run: |
           ./scripts/reload.sh --tag foco-cache-20261024 \
