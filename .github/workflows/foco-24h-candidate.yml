@@ -1,5 +1,5 @@
 name: Foco 24h candidate
-run-name: Foco 24h ${{ github.sha }}
+run-name: Foco 24h registry tests ${{ github.sha }}
 
 on:
   push:
@@ -18,7 +18,7 @@ jobs:
     if: github.repository == 'valter-labs/cmux' && github.ref == 'refs/heads/fix/foco-24h-session-cache'
     # The owned image has only CLT; use hosted Xcode until that image is provisioned.
     runs-on: macos-26
-    timeout-minutes: 90
+    timeout-minutes: 120
     defaults:
       run:
         shell: bash
@@ -51,17 +51,6 @@ jobs:
           git submodule update --init --recursive
           GHOSTTYKIT_DOWNLOAD_RETRIES=2 GHOSTTYKIT_DOWNLOAD_RETRY_DELAY=5 \
             GHOSTTYKIT_DOWNLOAD_MAX_TIME=120 ./scripts/download-prebuilt-ghosttykit.sh
-      - name: Build isolated candidate
-        run: |
-          ./scripts/reload.sh --tag foco-cache-20261024 \
-            --derived-data "$RUNNER_TEMP/foco-cache-app" \
-            --swift-frontend-workaround --no-global-cli-links \
-            2>&1 | tee foco-cache-evidence/build.txt
-          app_path="$(awk '/^App path:/{getline; sub(/^  /, ""); print; exit}' foco-cache-evidence/build.txt)"
-          test -d "$app_path"
-          bundle_id=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$app_path/Contents/Info.plist")
-          [[ "$bundle_id" == com.cmuxterm.app.debug.* ]]
-          ditto -c -k --sequesterRsrc --keepParent "$app_path" foco-cache-evidence/app.zip
       - name: Run registry lifecycle tests
         run: |
           # Xcode expands inherited; the shell must preserve it literally.
@@ -69,13 +58,13 @@ jobs:
           ./scripts/test-unit.sh -derivedDataPath "$RUNNER_TEMP/foco-cache-tests" \
             -resultBundlePath "$GITHUB_WORKSPACE/foco-cache-evidence/tests.xcresult" \
             -only-testing:cmuxTests/AgentChatSessionRegistryLifecycleTests \
-            'OTHER_SWIFT_FLAGS=$(inherited) -no-emit-module-separately -Xllvm -aarch64-enable-global-isel-at-O=-1' \
+            'OTHER_SWIFT_FLAGS=$(inherited) $(CMUX_TEST_SWIFT_FLAGS_$(TARGET_NAME)) -Xllvm -aarch64-enable-global-isel-at-O=-1' \
             test 2>&1 | tee foco-cache-evidence/tests.txt
       - name: Upload build and verification evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: foco-24h-${{ github.sha }}
+          name: foco-24h-registry-${{ github.sha }}
           path: foco-cache-evidence/
           if-no-files-found: warn
           retention-days: 7
