@@ -60,7 +60,11 @@ jobs:
             GHOSTTYKIT_DOWNLOAD_MAX_TIME=120 ./scripts/download-prebuilt-ghosttykit.sh
       - name: Build isolated optimized package
         run: |
-          ./scripts/reload.sh --tag foco-release-20261025 --name "cmux Foco" \
+          # Universal whole-module Release exceeded this runner's two-hour limit.
+          # shortcut: ARM64 only; restore universal WMO on a capable release runner.
+          printf '%s\n' 'ARCHS = arm64' 'SWIFT_COMPILATION_MODE = singlefile' > "$RUNNER_TEMP/foco-optimization.xcconfig"
+          XCODE_XCCONFIG_FILE="$RUNNER_TEMP/foco-optimization.xcconfig" \
+            ./scripts/reload.sh --tag foco-release-20261025 --name "cmux Foco" \
             --release --derived-data "$RUNNER_TEMP/foco-release-app" \
             --swift-frontend-workaround --no-global-cli-links \
             2>&1 | tee foco-cache-evidence/build.txt
@@ -71,6 +75,12 @@ jobs:
           git rev-parse HEAD > foco-cache-evidence/source-sha.txt
           git ls-tree HEAD Sources cmuxTests scripts cmux.xcodeproj > foco-cache-evidence/source-trees.txt
           shasum -a 256 foco-cache-evidence/app.zip > foco-cache-evidence/SHA256SUMS
+      - name: Preserve compiler output after cancellation
+        if: always()
+        run: |
+          if [[ -f /tmp/cmux-reload-foco-release-20261025.log ]]; then
+            cp /tmp/cmux-reload-foco-release-20261025.log foco-cache-evidence/compiler.txt
+          fi
       - name: Upload build and verification evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
