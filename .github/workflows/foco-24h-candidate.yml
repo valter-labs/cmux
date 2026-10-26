@@ -68,7 +68,11 @@ jobs:
           # shellcheck disable=SC2016
           printf 'CONFIGURATION_BUILD_DIR = %s/foco-stable-products/$(CONFIGURATION)\n' "$RUNNER_TEMP" > "$RUNNER_TEMP/foco-release.xcconfig"
           # Match reload.sh's Xcode 26.6 frontend workaround without changing app code.
+          # The Intel whole-module compiler was still active at the two-hour timeout.
+          # shortcut: ARM64 only; restore universal WMO after that timeout is resolved.
           cat >> "$RUNNER_TEMP/foco-release.xcconfig" <<'XCCONFIG'
+          ARCHS = arm64
+          SWIFT_COMPILATION_MODE = singlefile
           CODE_SIGNING_ALLOWED = NO
           SWIFT_ENABLE_BATCH_MODE = NO
           DEBUG_INFORMATION_FORMAT =
